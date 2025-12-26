@@ -1,121 +1,127 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { TimerPhase, TimerState } from '@/types';
+import { useState, useEffect, useRef } from 'react';
+import { useLocalStorage } from './useLocalStorage';
 
-const PHASE_1_DURATION = 20 * 60; // 20 minutes in seconds
-const PHASE_2_DURATION = 40 * 60; // 40 minutes (cumulative: 60 min)
-const PHASE_3_START = 60 * 60;    // 60 minutes
-
-export const getPhaseInfo = (phase: TimerPhase) => {
-  switch (phase) {
-    case 'phase1':
-      return {
-        label: 'No Keyboard',
-        description: 'Think through the problem on paper',
-        color: 'timer-phase1',
-        maxTime: PHASE_1_DURATION,
-      };
-    case 'phase2':
-      return {
-        label: 'Keyboard Allowed',
-        description: 'Start coding your solution',
-        color: 'timer-phase2',
-        maxTime: PHASE_2_DURATION,
-      };
-    case 'phase3':
-      return {
-        label: 'Editorial OK',
-        description: 'You can check the editorial now',
-        color: 'timer-phase3',
-        maxTime: null,
-      };
-  }
-};
+export interface TimerPhaseInfo {
+  label: string;
+  description: string;
+}
 
 export const useTimer = (problemId: string) => {
-  const [state, setState] = useState<TimerState>({
+  // Persist the start time and accumulated paused time
+  const [timerState, setTimerState] = useLocalStorage<{
+    isRunning: boolean;
+    startTime: number | null; // Timestamp when timer started/resumed
+    accumulatedTime: number;  // Time stored before last pause
+  }>(`timer_state_${problemId}`, {
     isRunning: false,
     startTime: null,
-    elapsedSeconds: 0,
-    phase: 'phase1',
+    accumulatedTime: 0,
   });
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const intervalRef = useRef<number | null>(null);
 
-  const getPhase = useCallback((seconds: number): TimerPhase => {
-    if (seconds < PHASE_1_DURATION) return 'phase1';
-    if (seconds < PHASE_3_START) return 'phase2';
-    return 'phase3';
-  }, []);
-
-  const start = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      isRunning: true,
-      startTime: new Date(),
-    }));
-  }, []);
-
-  const pause = useCallback(() => {
-    setState(prev => ({ ...prev, isRunning: false }));
-  }, []);
-
-  const reset = useCallback(() => {
-    setState({
-      isRunning: false,
-      startTime: null,
-      elapsedSeconds: 0,
-      phase: 'phase1',
-    });
-  }, []);
-
-  const stop = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    return state.elapsedSeconds;
-  }, [state.elapsedSeconds]);
-
+  // Calculate distinct elapsed time whenever state changes or on mount
   useEffect(() => {
-    if (state.isRunning) {
-      intervalRef.current = setInterval(() => {
-        setState(prev => {
-          const newElapsed = prev.elapsedSeconds + 1;
-          return {
-            ...prev,
-            elapsedSeconds: newElapsed,
-            phase: getPhase(newElapsed),
-          };
-        });
+    const calculateElapsed = () => {
+      if (timerState.isRunning && timerState.startTime) {
+        const now = Date.now();
+        const currentSessionDuration = Math.floor((now - timerState.startTime) / 1000);
+        return timerState.accumulatedTime + currentSessionDuration;
+      }
+      return timerState.accumulatedTime;
+    };
+
+    setElapsedSeconds(calculateElapsed());
+
+    if (timerState.isRunning) {
+      intervalRef.current = window.setInterval(() => {
+        setElapsedSeconds(calculateElapsed());
       }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
     }
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [state.isRunning, getPhase]);
+  }, [timerState.isRunning, timerState.startTime, timerState.accumulatedTime]);
 
-  const formatTime = (seconds: number): string => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const start = () => {
+    if (!timerState.isRunning) {
+      setTimerState(prev => ({
+        ...prev,
+        isRunning: true,
+        startTime: Date.now(),
+      }));
     }
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const pause = () => {
+    if (timerState.isRunning && timerState.startTime) {
+      const now = Date.now();
+      const sessionSeconds = Math.floor((now - timerState.startTime) / 1000);
+      
+      setTimerState(prev => ({
+        ...prev,
+        isRunning: false,
+        startTime: null,
+        accumulatedTime: prev.accumulatedTime + sessionSeconds,
+      }));
+    }
+  };
+
+  const reset = () => {
+    setTimerState({
+      isRunning: false,
+      startTime: null,
+      accumulatedTime: 0,
+    });
+    setElapsedSeconds(0);
+  };
+
+  const stop = () => {
+    pause(); // Ensure final time is captured
+    return elapsedSeconds;
+  };
+
+  // Helper logic for phases (Pure UI logic)
+  const getPhaseInfo = (seconds: number): { phase: 'phase1' | 'phase2' | 'phase3', info: TimerPhaseInfo } => {
+    if (seconds < 20 * 60) {
+      return { 
+        phase: 'phase1', 
+        info: { label: 'NO KEYBOARD', description: 'Read & Think. Do not touch the keyboard.' } 
+      };
+    } else if (seconds < 60 * 60) {
+      return { 
+        phase: 'phase2', 
+        info: { label: 'CODE MODE', description: 'Write your solution.' } 
+      };
+    } else {
+      return { 
+        phase: 'phase3', 
+        info: { label: 'EDITORIAL', description: 'You may consult the editorial now.' } 
+      };
+    }
+  };
+
+  const { phase, info } = getPhaseInfo(elapsedSeconds);
+
+  const formatTime = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   return {
-    ...state,
+    isRunning: timerState.isRunning,
+    elapsedSeconds,
+    phase,
+    phaseInfo: info,
     start,
     pause,
     reset,
     stop,
     formatTime,
-    phaseInfo: getPhaseInfo(state.phase),
   };
 };

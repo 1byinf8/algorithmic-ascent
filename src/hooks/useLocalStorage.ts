@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { BlackBookEntry, ProblemState } from '@/types';
 
 export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
+  // 1. Initialize state function to avoid reading localStorage on every render
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
@@ -11,6 +13,7 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T 
     }
   });
 
+  // 2. Wrap setValue to write to localStorage
   const setValue = (value: T | ((prev: T) => T)) => {
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
@@ -24,38 +27,46 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T 
   return [storedValue, setValue];
 }
 
+// Type for our main data store
+interface TrackerData {
+  startDate: string;
+  problemStates: Record<string, ProblemState>;
+  entries: BlackBookEntry[];
+}
+
 export function useProgress() {
-  const [progress, setProgress] = useLocalStorage<{
-    startDate: string;
-    problemStates: Record<string, any>;
-    entries: any[];
-  }>('dsa-tracker-progress', {
+  const [progress, setProgress] = useLocalStorage<TrackerData>('dsa-tracker-progress', {
     startDate: new Date().toISOString(),
     problemStates: {},
     entries: [],
   });
 
-  const updateProblemState = (problemId: string, state: any) => {
+  const updateProblemState = (problemId: string, state: Partial<ProblemState>) => {
     setProgress(prev => ({
       ...prev,
       problemStates: {
         ...prev.problemStates,
-        [problemId]: state,
+        [problemId]: {
+          ...(prev.problemStates[problemId] || { status: 'not-started', elapsedTime: 0, timerPhase: 'phase1' }),
+          ...state,
+          problemId // Ensure ID is preserved
+        } as ProblemState,
       },
     }));
   };
 
-  const addEntry = (entry: any) => {
+  const addEntry = (entry: BlackBookEntry) => {
     setProgress(prev => ({
       ...prev,
       entries: [...prev.entries, entry],
     }));
   };
 
-  const getDayProgress = (day: number, problems: any[]) => {
+  const getDayProgress = (day: number, problems: { id: string }[]) => {
     const completed = problems.filter(p => 
       progress.problemStates[p.id]?.status === 'completed'
     ).length;
+    
     return {
       completed,
       total: problems.length,

@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { planData, DayData, Problem } from '@/data/problemData';
+import { useState, useMemo, useEffect } from 'react';
+import { planData, Problem } from '@/data/problemData';
 import { BlackBookEntry } from '@/types';
-import { useProgress } from '@/hooks/useLocalStorage';
+import { useProgress, useLocalStorage } from '@/hooks/useLocalStorage';
 import { DayHeader } from '@/components/DayHeader';
 import { ProblemCard } from '@/components/ProblemCard';
 import { ProblemSolver } from '@/components/ProblemSolver';
@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Code2 } from 'lucide-react';
 
 type ActiveTab = 'home' | 'entries' | 'stats' | 'settings';
+
 type ViewState = 
   | { type: 'list' }
   | { type: 'solving'; problem: Problem }
@@ -23,28 +24,26 @@ type ViewState =
 
 const Index = () => {
   const { progress, updateProblemState, addEntry, getDayProgress, startDate } = useProgress();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
-  const [viewState, setViewState] = useState<ViewState>({ type: 'list' });
-  const [viewingDay, setViewingDay] = useState(1);
+  
+  // Persist View State
+  const [viewState, setViewState] = useLocalStorage<ViewState>('dsa-view-state', { type: 'list' });
+  const [activeTab, setActiveTab] = useLocalStorage<ActiveTab>('dsa-active-tab', 'home');
+  const [viewingDay, setViewingDay] = useLocalStorage<number>('dsa-viewing-day', 1);
 
-  // Get current day data
   const currentDayData = useMemo(() => {
     return planData.find(d => d.day === viewingDay) || planData[0];
   }, [viewingDay]);
 
-  // Calculate progress for current day
   const dayProgress = useMemo(() => {
     return getDayProgress(viewingDay, currentDayData.problems);
   }, [viewingDay, currentDayData, progress.problemStates]);
 
-  // Get all entries sorted by date
   const allEntries = useMemo(() => {
     return [...progress.entries].sort((a, b) => 
       new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
     );
   }, [progress.entries]);
 
-  // Stats calculations
   const totalSolved = allEntries.length;
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -52,7 +51,6 @@ const Index = () => {
     new Date(e.completedAt) >= weekStart
   ).length;
 
-  // Calculate streak (simplified)
   const streak = useMemo(() => {
     if (allEntries.length === 0) return 0;
     let count = 0;
@@ -68,11 +66,13 @@ const Index = () => {
         return entryDate.getTime() === checkDate.getTime();
       });
       if (hasEntry) count++;
-      else if (i > 0) break;
+      else if (i === 0 && count === 0) continue; 
+      else break;
     }
     return count;
   }, [allEntries]);
 
+  // --- Handlers ---
   const handleProblemClick = (problem: Problem) => {
     setViewState({ type: 'solving', problem });
   };
@@ -84,7 +84,7 @@ const Index = () => {
       elapsedTime: entry.timeSpent,
     });
     setViewState({ type: 'list' });
-    toast.success('Problem solved! Entry added to Black Book.');
+    toast.success('Problem solved!');
   };
 
   const handleEntryClick = (entry: BlackBookEntry) => {
@@ -103,44 +103,57 @@ const Index = () => {
   };
 
   const handleResetProgress = () => {
-    localStorage.removeItem('dsa-tracker-progress');
-    window.location.reload();
+    if (confirm("Are you sure? This will delete all progress.")) {
+      localStorage.removeItem('dsa-tracker-progress');
+      localStorage.removeItem('dsa-view-state');
+      localStorage.removeItem('dsa-active-tab');
+      window.location.reload();
+    }
   };
 
-  // Render solving view
+  // --- Render Views ---
+
   if (viewState.type === 'solving') {
     return (
-      <ProblemSolver
-        problem={viewState.problem}
-        onComplete={handleProblemComplete}
-        onBack={() => setViewState({ type: 'list' })}
-      />
+      <div className="min-h-screen bg-background dark flex justify-center p-4">
+        <div className="w-full max-w-4xl">
+          <ProblemSolver
+            problem={viewState.problem}
+            onComplete={handleProblemComplete}
+            onBack={() => setViewState({ type: 'list' })}
+          />
+        </div>
+      </div>
     );
   }
 
-  // Render entry detail view
   if (viewState.type === 'entry-detail') {
     return (
-      <EntryDetail
-        entry={viewState.entry}
-        onBack={() => setViewState({ type: 'list' })}
-      />
+      <div className="min-h-screen bg-background dark flex justify-center p-4">
+        <div className="w-full max-w-4xl">
+          <EntryDetail
+            entry={viewState.entry}
+            onBack={() => setViewState({ type: 'list' })}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background dark">
+    <div className="min-h-screen bg-background dark text-foreground flex flex-col items-center">
       {/* Header */}
-      <header className="glass sticky top-0 z-10 px-4 py-3 mb-4">
-        <div className="flex items-center gap-2">
-          <Code2 className="w-6 h-6 text-primary" />
-          <h1 className="font-bold text-lg">DSA Tracker</h1>
+      <header className="w-full glass sticky top-0 z-10 border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-2">
+          <Code2 className="w-6 h-6 text-primary animate-pulse" />
+          <h1 className="font-bold text-lg tracking-tight">DSA Tracker</h1>
         </div>
       </header>
 
-      <main className="px-4 pb-24">
+      {/* Main Content - FIXED WIDTH HERE */}
+      <main className="w-full max-w-5xl px-4 pb-24 mt-6">
         {activeTab === 'home' && (
-          <>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
             <StatsBar
               totalSolved={totalSolved}
               streak={streak}
@@ -148,36 +161,55 @@ const Index = () => {
               weeklySolved={weeklySolved}
             />
 
-            <DayHeader
-              dayData={currentDayData}
-              progress={dayProgress}
-              currentDay={1}
-              viewingDay={viewingDay}
-              onPrevDay={() => setViewingDay(d => Math.max(1, d - 1))}
-              onNextDay={() => setViewingDay(d => Math.min(planData.length, d + 1))}
-              canGoPrev={viewingDay > 1}
-              canGoNext={viewingDay < planData.length}
-            />
-
-            <div className="space-y-3">
-              {currentDayData.problems.map(problem => (
-                <ProblemCard
-                  key={problem.id}
-                  problem={problem}
-                  status={progress.problemStates[problem.id]?.status || 'not-started'}
-                  isOptional={problem.isOptional}
-                  onClick={() => handleProblemClick(problem)}
+            <div className="grid gap-6 md:grid-cols-[1fr,300px]">
+              {/* Left Column: Problems */}
+              <div className="space-y-4">
+                <DayHeader
+                  dayData={currentDayData}
+                  progress={dayProgress}
+                  currentDay={1}
+                  viewingDay={viewingDay}
+                  onPrevDay={() => setViewingDay(d => Math.max(1, d - 1))}
+                  onNextDay={() => setViewingDay(d => Math.min(planData.length, d + 1))}
+                  canGoPrev={viewingDay > 1}
+                  canGoNext={viewingDay < planData.length}
                 />
-              ))}
+                
+                <div className="grid gap-3">
+                  {currentDayData.problems.map(problem => (
+                    <ProblemCard
+                      key={problem.id}
+                      problem={problem}
+                      status={progress.problemStates[problem.id]?.status || 'not-started'}
+                      isOptional={problem.isOptional}
+                      onClick={() => handleProblemClick(problem)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column: Mini Stats / Info (Hidden on mobile) */}
+              <div className="hidden md:block space-y-4">
+                <div className="glass p-4 rounded-xl border border-white/5">
+                  <h3 className="font-semibold mb-2 text-sm text-muted-foreground">Quick Stats</h3>
+                  <div className="text-2xl font-bold">{totalSolved} <span className="text-sm font-normal text-muted-foreground">problems solved</span></div>
+                </div>
+                <div className="glass p-4 rounded-xl border border-white/5">
+                  <h3 className="font-semibold mb-2 text-sm text-muted-foreground">Current Streak</h3>
+                  <div className="text-2xl font-bold text-orange-400">{streak} <span className="text-sm font-normal text-muted-foreground">days</span></div>
+                </div>
+              </div>
             </div>
-          </>
+          </div>
         )}
 
         {activeTab === 'entries' && (
-          <EntriesList
-            entries={allEntries}
-            onEntryClick={handleEntryClick}
-          />
+          <div className="max-w-3xl mx-auto">
+            <EntriesList
+              entries={allEntries}
+              onEntryClick={handleEntryClick}
+            />
+          </div>
         )}
 
         {activeTab === 'stats' && (
@@ -185,11 +217,13 @@ const Index = () => {
         )}
 
         {activeTab === 'settings' && (
-          <SettingsView
-            startDate={startDate}
-            onResetProgress={handleResetProgress}
-            onExportData={handleExportData}
-          />
+          <div className="max-w-2xl mx-auto">
+            <SettingsView
+              startDate={startDate}
+              onResetProgress={handleResetProgress}
+              onExportData={handleExportData}
+            />
+          </div>
         )}
       </main>
 
