@@ -1,70 +1,60 @@
 import { useState, useEffect } from 'react';
 import { BlackBookEntry, ProblemState } from '@/types';
+import { sql } from '@/lib/neon';
 
-// Enhanced localStorage hook with better persistence
-export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
-  // Initialize state with localStorage value or initialValue
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === 'undefined') {
-      return initialValue;
-    }
-    try {
-      const item = window.localStorage.getItem(key);
-      if (item) {
-        // Parse and validate the stored data
-        const parsed = JSON.parse(item);
-        return parsed;
-      }
-      return initialValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key "${key}":`, error);
-      return initialValue;
-    }
-  });
+// Modified hook to use Neon DB instead of localStorage
+export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void, boolean] {
+  // Start with initialValue while we fetch from DB
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Update localStorage whenever storedValue changes
+  // Fetch data from Neon DB on mount
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem(key, JSON.stringify(storedValue));
-    } catch (error) {
-      console.error(`Error setting localStorage key "${key}":`, error);
-    }
-  }, [key, storedValue]);
-
-  // Sync across tabs
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === key && e.newValue !== null) {
-        try {
-          const newValue = JSON.parse(e.newValue);
-          setStoredValue(newValue);
-        } catch (error) {
-          console.error(`Error parsing storage event for key "${key}":`, error);
+    let isMounted = true;
+    
+    const fetchData = async () => {
+      try {
+        const result = await sql`SELECT value FROM app_storage WHERE key = ${key}`;
+        if (result && result.length > 0 && isMounted) {
+          // Neon returns the JSONB column directly as an object
+          setStoredValue(result[0].value as T);
         }
+      } catch (error) {
+        console.error(`Error fetching key "${key}" from Neon DB:`, error);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    fetchData();
+
+    return () => { isMounted = false; };
   }, [key]);
 
-  const setValue = (value: T | ((prev: T) => T)) => {
+  const setValue = async (value: T | ((prev: T) => T)) => {
     try {
+      // Allow value to be a function so we have same API as useState
       const valueToStore = value instanceof Function ? value(storedValue) : value;
+
+      // 1. Optimistic Update (Update UI immediately)
       setStoredValue(valueToStore);
+
+      // 2. Persist to Neon DB
+      // We use UPSERT (Insert or Update) logic
+      await sql`
+        INSERT INTO app_storage (key, value) 
+        VALUES (${key}, ${valueToStore}) 
+        ON CONFLICT (key) 
+        DO UPDATE SET value = ${valueToStore}, updated_at = NOW()
+      `;
+      
     } catch (error) {
-      console.error(`Error updating state for key "${key}":`, error);
+      console.error(`Error setting key "${key}" in Neon DB:`, error);
+      // Optionally revert state here if DB fails
     }
   };
 
-  return [storedValue, setValue];
+  return [storedValue, setValue, isLoading];
 }
 
 // Type for our main data store
@@ -72,29 +62,29 @@ interface TrackerData {
   startDate: string;
   problemStates: Record<string, ProblemState>;
   entries: BlackBookEntry[];
-  version: number; // For future migrations
+  version: number;
 }
 
 const CURRENT_VERSION = 1;
 
 export function useProgress() {
-  const [progress, setProgress] = useLocalStorage<TrackerData>('dsa-tracker-progress', {
+  // We utilize the loading state now to prevent flashing incorrect data
+  const [progress, setProgress, isLoading] = useLocalStorage<TrackerData>('dsa-tracker-progress', {
     startDate: new Date().toISOString(),
     problemStates: {},
     entries: [],
     version: CURRENT_VERSION,
   });
 
-  // Migrate old data if needed
+  // Migrate old data if needed (logic remains same)
   useEffect(() => {
-    if (progress.version !== CURRENT_VERSION) {
-      // Add migration logic here if needed in future
+    if (!isLoading && progress.version !== CURRENT_VERSION) {
       setProgress({
         ...progress,
         version: CURRENT_VERSION,
       });
     }
-  }, []);
+  }, [isLoading, progress.version]);
 
   const updateProblemState = (problemId: string, state: Partial<ProblemState>) => {
     setProgress(prev => {
@@ -153,5 +143,6 @@ export function useProgress() {
     getDayProgress,
     resetProgress,
     startDate: new Date(progress.startDate),
+    isLoading, // Export loading state if you want to show a spinner
   };
 }
