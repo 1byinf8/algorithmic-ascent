@@ -11,6 +11,7 @@ import { EntriesList } from '@/components/EntriesList';
 import { EntryDetail } from '@/components/EntryDetail';
 import { StatsView } from '@/components/StatsView';
 import { SettingsView } from '@/components/SettingsView';
+import { InstallPrompt } from '@/components/InstallPrompt';
 import { toast } from 'sonner';
 import { Code2 } from 'lucide-react';
 
@@ -193,6 +194,7 @@ const Index = () => {
       </main>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <InstallPrompt />
     </div>
   );
 };
