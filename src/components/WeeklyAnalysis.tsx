@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BlackBookEntry } from '@/types';
-import { BookOpen, Sparkles, AlertCircle, Loader2, Key } from 'lucide-react';
+import { BookOpen, Sparkles, AlertCircle, Loader2, Key, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface WeeklyAnalysisProps {
@@ -21,6 +21,16 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<'empty' | 'saved' | 'validating'>('empty');
+
+  // Load saved API key on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setApiKey(savedKey);
+      setApiKeyStatus('saved');
+    }
+  }, []);
 
   // Get this week's entries
   const getThisWeekEntries = () => {
@@ -63,9 +73,40 @@ ${JSON.stringify(entriesData, null, 2)}
 Be specific, constructive, and encouraging. Focus on DSA concepts and problem-solving strategies.`;
   };
 
+  const validateAndSaveApiKey = (key: string) => {
+    if (!key.trim()) {
+      setApiKeyStatus('empty');
+      return false;
+    }
+    
+    // Basic validation - Gemini API keys start with "AIza"
+    if (!key.startsWith('AIza')) {
+      setError('Invalid API key format. Gemini API keys should start with "AIza"');
+      return false;
+    }
+
+    localStorage.setItem('gemini_api_key', key);
+    setApiKeyStatus('saved');
+    setError(null);
+    return true;
+  };
+
+  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newKey = e.target.value;
+    setApiKey(newKey);
+    if (newKey.trim()) {
+      setApiKeyStatus('validating');
+      // Debounce validation
+      setTimeout(() => validateAndSaveApiKey(newKey), 500);
+    } else {
+      setApiKeyStatus('empty');
+    }
+  };
+
   const analyzeWithGemini = async () => {
-    if (!apiKey.trim()) {
-      setError('Please enter your Gemini API key');
+    if (!validateAndSaveApiKey(apiKey)) {
+      setError('Please enter a valid Gemini API key');
+      setShowApiKeyInput(true);
       return;
     }
 
@@ -97,6 +138,9 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
       );
 
       if (!response.ok) {
+        if (response.status === 400) {
+          throw new Error('Invalid API key. Please check your Gemini API key and try again.');
+        }
         throw new Error('Failed to get analysis from Gemini. Check your API key.');
       }
 
@@ -115,22 +159,23 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
 
       const result = JSON.parse(jsonMatch[0]);
       setAnalysis(result);
-      
-      // Save API key to localStorage for convenience
-      localStorage.setItem('gemini_api_key', apiKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
       console.error('Gemini API error:', err);
+      if (err instanceof Error && err.message.includes('API key')) {
+        setShowApiKeyInput(true);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Load saved API key on mount
-  useState(() => {
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) setApiKey(savedKey);
-  });
+  const clearApiKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setApiKey('');
+    setApiKeyStatus('empty');
+    setAnalysis(null);
+  };
 
   const weekEntries = getThisWeekEntries();
 
@@ -146,42 +191,93 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
         </span>
       </div>
 
-      {/* API Key Input */}
+      {/* API Key Management */}
       {!analysis && (
         <div className="space-y-4 mb-4">
-          <div>
-            <button
-              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Key className="w-4 h-4" />
-              {showApiKeyInput ? 'Hide' : 'Configure'} API Key
-            </button>
+          {/* API Key Status Indicator */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">API Key Status:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {apiKeyStatus === 'empty' && (
+                <>
+                  <X className="w-4 h-4 text-destructive" />
+                  <span className="text-sm text-destructive">Not configured</span>
+                </>
+              )}
+              {apiKeyStatus === 'validating' && (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-warning" />
+                  <span className="text-sm text-warning">Validating...</span>
+                </>
+              )}
+              {apiKeyStatus === 'saved' && (
+                <>
+                  <Check className="w-4 h-4 text-success" />
+                  <span className="text-sm text-success">Ready</span>
+                </>
+              )}
+            </div>
           </div>
 
+          {/* Toggle API Key Input */}
+          <button
+            onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Key className="w-4 h-4" />
+            {showApiKeyInput ? 'Hide' : 'Configure'} API Key
+          </button>
+
+          {/* API Key Input */}
           {showApiKeyInput && (
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">
-                Google Gemini API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your Gemini API key"
-                className="input-field w-full"
-              />
-              <p className="text-xs text-muted-foreground">
-                Get your free API key from{' '}
-                <a 
-                  href="https://aistudio.google.com/app/apikey" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  Google AI Studio
-                </a>
-              </p>
+            <div className="space-y-3 p-4 rounded-lg bg-muted/30 border border-border">
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center justify-between">
+                  Google Gemini API Key
+                  {apiKey && (
+                    <button
+                      onClick={clearApiKey}
+                      className="text-xs text-destructive hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={handleApiKeyChange}
+                  placeholder="AIza..."
+                  className="input-field w-full"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Get your free API key from{' '}
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Google AI Studio
+                  </a>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Your API key is stored locally and never sent to our servers.
+                </p>
+              </div>
+
+              {apiKeyStatus === 'saved' && (
+                <div className="flex items-start gap-2 p-2 bg-success/10 border border-success/20 rounded text-xs text-success">
+                  <Check className="w-3 h-3 mt-0.5" />
+                  <span>API key saved successfully!</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -191,10 +287,10 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
       {!analysis && weekEntries.length > 0 && (
         <button
           onClick={analyzeWithGemini}
-          disabled={isLoading || !apiKey}
+          disabled={isLoading || apiKeyStatus !== 'saved'}
           className={cn(
             "w-full btn-primary flex items-center justify-center gap-2",
-            isLoading && "opacity-50 cursor-not-allowed"
+            (isLoading || apiKeyStatus !== 'saved') && "opacity-50 cursor-not-allowed"
           )}
         >
           {isLoading ? (
@@ -205,7 +301,7 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
-              Generate Weekly Analysis
+              {apiKeyStatus === 'saved' ? 'Generate Weekly Analysis' : 'Configure API Key First'}
             </>
           )}
         </button>

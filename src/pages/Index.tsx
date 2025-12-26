@@ -13,7 +13,7 @@ import { StatsView } from '@/components/StatsView';
 import { SettingsView } from '@/components/SettingsView';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { toast } from 'sonner';
-import { Code2 } from 'lucide-react';
+import { Code2, Loader2 } from 'lucide-react';
 
 type ActiveTab = 'home' | 'entries' | 'stats' | 'settings';
 
@@ -23,11 +23,12 @@ type ViewState =
   | { type: 'entry-detail'; entry: BlackBookEntry };
 
 const Index = () => {
-  const { progress, updateProblemState, addEntry, getDayProgress, startDate, resetProgress } = useProgress();
+  const { progress, updateProblemState, addEntry, getDayProgress, startDate, resetProgress, isLoading } = useProgress();
   
   const [viewState, setViewState] = useLocalStorage<ViewState>('dsa-view-state', { type: 'list' });
   const [activeTab, setActiveTab] = useLocalStorage<ActiveTab>('dsa-active-tab', 'home');
   const [viewingDay, setViewingDay] = useLocalStorage<number>('dsa-viewing-day', 1);
+  const [isSaving, setIsSaving] = useState(false);
 
   const currentDayData = useMemo(() => {
     return planData.find(d => d.day === viewingDay) || planData[0];
@@ -75,14 +76,29 @@ const Index = () => {
     setViewState({ type: 'solving', problem });
   };
 
-  const handleProblemComplete = (entry: BlackBookEntry) => {
-    addEntry(entry);
-    updateProblemState(entry.problemId, {
-      status: 'completed',
-      elapsedTime: entry.timeSpent,
-    });
-    setViewState({ type: 'list' });
-    toast.success('Problem solved! 🎉');
+  // Fixed to properly await async operations
+  const handleProblemComplete = async (entry: BlackBookEntry) => {
+    setIsSaving(true);
+    try {
+      // Add entry first
+      await addEntry(entry);
+      
+      // Then update problem state
+      await updateProblemState(entry.problemId, {
+        status: 'completed',
+        elapsedTime: entry.timeSpent,
+      });
+      
+      // Finally update view state
+      await setViewState({ type: 'list' });
+      
+      toast.success('Problem solved! 🎉');
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      toast.error('Failed to save progress. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleEntryClick = (entry: BlackBookEntry) => {
@@ -101,13 +117,30 @@ const Index = () => {
     toast.success('Data exported successfully!');
   };
 
-  const handleResetProgress = () => {
-    resetProgress();
-    setViewState({ type: 'list' });
-    setActiveTab('home');
-    setViewingDay(1);
-    toast.success('Progress reset successfully!');
+  const handleResetProgress = async () => {
+    try {
+      await resetProgress();
+      await setViewState({ type: 'list' });
+      await setActiveTab('home');
+      await setViewingDay(1);
+      toast.success('Progress reset successfully!');
+    } catch (error) {
+      console.error('Error resetting progress:', error);
+      toast.error('Failed to reset progress. Please try again.');
+    }
   };
+
+  // Show loading state while data is being fetched
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Loading your progress...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Solving view - Full screen on mobile
   if (viewState.type === 'solving') {
@@ -118,6 +151,14 @@ const Index = () => {
           onComplete={handleProblemComplete}
           onBack={() => setViewState({ type: 'list' })}
         />
+        {isSaving && (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="glass rounded-2xl p-6 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+              <p className="font-medium">Saving your progress...</p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

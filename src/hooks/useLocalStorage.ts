@@ -54,15 +54,17 @@ export function useLocalStorage<T>(
     };
   }, [key, initialValue]);
 
-  // SET
+  // SET - Fixed to properly handle async and update local state immediately
   const setValue = useCallback(
     async (value: T | ((prev: T) => T)) => {
       try {
         const valueToStore =
           value instanceof Function ? value(storedValue) : value;
 
+        // Update local state immediately for better UX
         setStoredValue(valueToStore);
 
+        // Then persist to backend
         const response = await fetch('/api/storage', {
           method: 'POST',
           headers: {
@@ -85,7 +87,7 @@ export function useLocalStorage<T>(
         }
       } catch (err) {
         console.error(`Error setting key "${key}"`, err);
-        // Attempt to revert on error
+        // Revert on error
         try {
           const response = await fetch(
             `/api/storage?key=${encodeURIComponent(key)}`
@@ -106,15 +108,13 @@ export function useLocalStorage<T>(
   return [storedValue, setValue, isLoading];
 }
 
-// Missing useProgress hook implementation
+// Fixed useProgress hook with better async handling
 export const useProgress = () => {
-  // Extended interface to include entries which is used in Index.tsx
-  // but might be missing from the base UserProgress type
   interface ExtendedUserProgress extends UserProgress {
     entries: BlackBookEntry[];
   }
 
-  const [progress, setProgress] = useLocalStorage<ExtendedUserProgress>('dsa-tracker-progress', {
+  const [progress, setProgress, isLoading] = useLocalStorage<ExtendedUserProgress>('dsa-tracker-progress', {
     startDate: new Date(),
     currentDay: 1,
     problemStates: {},
@@ -124,8 +124,9 @@ export const useProgress = () => {
 
   const startDate = new Date(progress.startDate);
 
-  const updateProblemState = (problemId: string, updates: Partial<ProblemState>) => {
-    setProgress(prev => ({
+  // Fixed to await the async operation
+  const updateProblemState = async (problemId: string, updates: Partial<ProblemState>) => {
+    await setProgress(prev => ({
       ...prev,
       problemStates: {
         ...prev.problemStates,
@@ -142,8 +143,9 @@ export const useProgress = () => {
     }));
   };
 
-  const addEntry = (entry: BlackBookEntry) => {
-    setProgress(prev => ({
+  // Fixed to await the async operation
+  const addEntry = async (entry: BlackBookEntry) => {
+    await setProgress(prev => ({
       ...prev,
       entries: [...(prev.entries || []), entry]
     }));
@@ -161,8 +163,8 @@ export const useProgress = () => {
     };
   };
 
-  const resetProgress = () => {
-    setProgress({
+  const resetProgress = async () => {
+    await setProgress({
       startDate: new Date(),
       currentDay: 1,
       problemStates: {},
@@ -177,6 +179,7 @@ export const useProgress = () => {
     addEntry,
     getDayProgress,
     startDate,
-    resetProgress
+    resetProgress,
+    isLoading
   };
 };
