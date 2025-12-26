@@ -1,26 +1,66 @@
 import { useState, useEffect } from 'react';
 import { BlackBookEntry, ProblemState } from '@/types';
 
+// Enhanced localStorage hook with better persistence
 export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((prev: T) => T)) => void] {
-  // 1. Initialize state function to avoid reading localStorage on every render
+  // Initialize state with localStorage value or initialValue
   const [storedValue, setStoredValue] = useState<T>(() => {
+    if (typeof window === 'undefined') {
+      return initialValue;
+    }
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      if (item) {
+        // Parse and validate the stored data
+        const parsed = JSON.parse(item);
+        return parsed;
+      }
+      return initialValue;
     } catch (error) {
       console.error(`Error reading localStorage key "${key}":`, error);
       return initialValue;
     }
   });
 
-  // 2. Wrap setValue to write to localStorage
+  // Update localStorage whenever storedValue changes
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(key, JSON.stringify(storedValue));
+    } catch (error) {
+      console.error(`Error setting localStorage key "${key}":`, error);
+    }
+  }, [key, storedValue]);
+
+  // Sync across tabs
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === key && e.newValue !== null) {
+        try {
+          const newValue = JSON.parse(e.newValue);
+          setStoredValue(newValue);
+        } catch (error) {
+          console.error(`Error parsing storage event for key "${key}":`, error);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [key]);
+
   const setValue = (value: T | ((prev: T) => T)) => {
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
     } catch (error) {
-      console.error(`Error setting localStorage key "${key}":`, error);
+      console.error(`Error updating state for key "${key}":`, error);
     }
   };
 
@@ -32,27 +72,50 @@ interface TrackerData {
   startDate: string;
   problemStates: Record<string, ProblemState>;
   entries: BlackBookEntry[];
+  version: number; // For future migrations
 }
+
+const CURRENT_VERSION = 1;
 
 export function useProgress() {
   const [progress, setProgress] = useLocalStorage<TrackerData>('dsa-tracker-progress', {
     startDate: new Date().toISOString(),
     problemStates: {},
     entries: [],
+    version: CURRENT_VERSION,
   });
 
+  // Migrate old data if needed
+  useEffect(() => {
+    if (progress.version !== CURRENT_VERSION) {
+      // Add migration logic here if needed in future
+      setProgress({
+        ...progress,
+        version: CURRENT_VERSION,
+      });
+    }
+  }, []);
+
   const updateProblemState = (problemId: string, state: Partial<ProblemState>) => {
-    setProgress(prev => ({
-      ...prev,
-      problemStates: {
-        ...prev.problemStates,
-        [problemId]: {
-          ...(prev.problemStates[problemId] || { status: 'not-started', elapsedTime: 0, timerPhase: 'phase1' }),
-          ...state,
-          problemId // Ensure ID is preserved
-        } as ProblemState,
-      },
-    }));
+    setProgress(prev => {
+      const currentState = prev.problemStates[problemId] || {
+        problemId,
+        status: 'not-started' as const,
+        elapsedTime: 0,
+        timerPhase: 'phase1' as const,
+      };
+
+      return {
+        ...prev,
+        problemStates: {
+          ...prev.problemStates,
+          [problemId]: {
+            ...currentState,
+            ...state,
+          } as ProblemState,
+        },
+      };
+    });
   };
 
   const addEntry = (entry: BlackBookEntry) => {
@@ -74,11 +137,21 @@ export function useProgress() {
     };
   };
 
+  const resetProgress = () => {
+    setProgress({
+      startDate: new Date().toISOString(),
+      problemStates: {},
+      entries: [],
+      version: CURRENT_VERSION,
+    });
+  };
+
   return {
     progress,
     updateProblemState,
     addEntry,
     getDayProgress,
+    resetProgress,
     startDate: new Date(progress.startDate),
   };
 }
