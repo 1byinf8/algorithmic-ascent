@@ -1,4 +1,4 @@
-import { useTimer, getPhaseInfo } from '@/hooks/useTimer';
+import { useTimer } from '@/hooks/useTimer';
 import { Play, Pause, RotateCcw, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
