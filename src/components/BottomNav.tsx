@@ -15,21 +15,35 @@ export const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 glass border-t border-border safe-area-bottom">
-      <div className="flex justify-around items-center h-16 px-4 max-w-lg mx-auto">
+    <nav className="bottom-nav">
+      <div className="flex justify-around items-center h-16 px-2 max-w-lg mx-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-colors",
-              activeTab === tab.id 
-                ? "text-primary" 
-                : "text-muted-foreground hover:text-foreground"
+              "nav-item flex flex-col items-center gap-1 px-4 py-2 min-w-[64px] transition-all duration-300",
+              activeTab === tab.id && "active"
             )}
           >
-            <tab.icon className="w-5 h-5" />
-            <span className="text-xs font-medium">{tab.label}</span>
+            <div className={cn(
+              "transition-transform duration-300",
+              activeTab === tab.id && "scale-110"
+            )}>
+              <tab.icon className={cn(
+                "w-5 h-5 transition-colors duration-300",
+                activeTab === tab.id ? "text-primary" : "text-muted-foreground"
+              )} />
+            </div>
+            <span className={cn(
+              "text-xs font-semibold transition-colors duration-300",
+              activeTab === tab.id ? "text-primary" : "text-muted-foreground"
+            )}>
+              {tab.label}
+            </span>
+            {activeTab === tab.id && (
+              <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-primary" />
+            )}
           </button>
         ))}
       </div>

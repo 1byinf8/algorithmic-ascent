@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react';
 import { useTimer } from '@/hooks/useTimer';
-import { Play, Pause, RotateCcw, AlertCircle } from 'lucide-react';
+import { Play, Pause, RotateCcw, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { playSound, getTimerSettings } from '@/lib/sounds';
 
 interface TimerProps {
   problemId: string;
@@ -21,8 +23,57 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
     phaseInfo,
   } = useTimer(problemId);
 
+  // Track previous phase to detect transitions
+  const prevPhaseRef = useRef(phase);
+  const hasPlayedPhase1Sound = useRef(false);
+  const hasPlayedPhase2Sound = useRef(false);
+
+  // Play sounds on phase transitions
+  useEffect(() => {
+    const settings = getTimerSettings();
+    if (!settings.soundsEnabled || !isRunning) return;
+
+    const PHASE1_END = 20 * 60; // 20 minutes
+    const PHASE2_END = 60 * 60; // 60 minutes
+
+    // Phase 1 complete (20 min reached)
+    if (elapsedSeconds >= PHASE1_END && !hasPlayedPhase1Sound.current) {
+      playSound('phase1Complete');
+      hasPlayedPhase1Sound.current = true;
+    }
+
+    // Phase 2 complete (60 min reached)
+    if (elapsedSeconds >= PHASE2_END && !hasPlayedPhase2Sound.current) {
+      playSound('phase2Complete');
+      hasPlayedPhase2Sound.current = true;
+    }
+
+    prevPhaseRef.current = phase;
+  }, [elapsedSeconds, phase, isRunning]);
+
+  // Reset sound flags when timer resets
+  useEffect(() => {
+    if (elapsedSeconds === 0) {
+      hasPlayedPhase1Sound.current = false;
+      hasPlayedPhase2Sound.current = false;
+    }
+  }, [elapsedSeconds]);
+
+  // Handle start with sound
+  const handleStart = () => {
+    const settings = getTimerSettings();
+    if (settings.soundsEnabled && elapsedSeconds === 0) {
+      playSound('timerStart');
+    }
+    start();
+  };
+
   const handleComplete = () => {
     const elapsed = stop();
+    const settings = getTimerSettings();
+    if (settings.soundsEnabled) {
+      playSound('problemSolved');
+    }
     onComplete(elapsed);
   };
 
@@ -45,7 +96,7 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
   const getPhaseProgress = () => {
     const phase1End = 20 * 60;
     const phase2End = 60 * 60;
-    
+
     if (elapsedSeconds <= phase1End) {
       return (elapsedSeconds / phase1End) * 100;
     } else if (elapsedSeconds <= phase2End) {
@@ -55,72 +106,100 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
   };
 
   return (
-    <div className={cn("glass rounded-2xl p-6 text-center", className)}>
+    <div className={cn("glass rounded-3xl p-8 text-center relative overflow-hidden", className)}>
+      {/* Background glow effect */}
+      <div className={cn(
+        "absolute inset-0 opacity-20 blur-3xl transition-colors duration-1000",
+        phase === 'phase1' && "bg-primary",
+        phase === 'phase2' && "bg-warning",
+        phase === 'phase3' && "bg-destructive"
+      )} />
+
       {/* Timer Display */}
-      <div className="mb-4">
+      <div className="mb-6 relative">
         <div className={cn(
-          "font-mono text-5xl font-bold tracking-wider transition-colors duration-500",
-          getPhaseColor()
+          "timer-display transition-all duration-500",
+          getPhaseColor(),
+          isRunning && "neon-text"
         )}>
           {formatTime(elapsedSeconds)}
         </div>
       </div>
 
       {/* Phase Indicator */}
-      <div className="mb-6">
+      <div className="mb-8 relative">
         <div className={cn(
-          "inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors",
-          phase === 'phase1' && "bg-primary/10 text-primary",
-          phase === 'phase2' && "bg-warning/10 text-warning",
-          phase === 'phase3' && "bg-destructive/10 text-destructive"
+          "phase-pill animate-scale-in",
+          phase === 'phase1' && "bg-primary/20 text-primary border border-primary/30",
+          phase === 'phase2' && "bg-warning/20 text-warning border border-warning/30",
+          phase === 'phase3' && "bg-destructive/20 text-destructive border border-destructive/30"
         )}>
-          <AlertCircle className="w-4 h-4" />
+          <span className={cn(
+            "w-2 h-2 rounded-full animate-pulse",
+            phase === 'phase1' && "bg-primary",
+            phase === 'phase2' && "bg-warning",
+            phase === 'phase3' && "bg-destructive"
+          )} />
           {phaseInfo.label}
         </div>
-        <p className="text-muted-foreground text-sm mt-2">{phaseInfo.description}</p>
+        <p className="text-muted-foreground text-sm mt-3 font-medium">{phaseInfo.description}</p>
       </div>
 
       {/* Progress Bar */}
-      <div className="h-2 bg-muted rounded-full overflow-hidden mb-6">
-        <div 
-          className={cn("h-full transition-all duration-500", getProgressColor())}
+      <div className="h-3 bg-muted/50 rounded-full overflow-hidden mb-6 relative backdrop-blur-sm">
+        <div
+          className={cn(
+            "h-full transition-all duration-500 rounded-full progress-animate",
+            phase === 'phase1' && "bg-gradient-to-r from-primary to-primary/70",
+            phase === 'phase2' && "bg-gradient-to-r from-warning to-warning/70",
+            phase === 'phase3' && "bg-gradient-to-r from-destructive to-destructive/70"
+          )}
           style={{ width: `${getPhaseProgress()}%` }}
         />
       </div>
 
       {/* Phase Timeline */}
-      <div className="flex justify-between text-xs text-muted-foreground mb-6">
-        <span className={elapsedSeconds >= 0 ? 'text-primary' : ''}>0m</span>
-        <span className={elapsedSeconds >= 20*60 ? 'text-warning' : ''}>20m</span>
-        <span className={elapsedSeconds >= 60*60 ? 'text-destructive' : ''}>60m</span>
+      <div className="flex justify-between text-xs text-muted-foreground mb-8 font-mono font-semibold">
+        <span className={cn(
+          "transition-colors duration-300",
+          elapsedSeconds >= 0 && 'text-primary'
+        )}>0m</span>
+        <span className={cn(
+          "transition-colors duration-300",
+          elapsedSeconds >= 20 * 60 && 'text-warning'
+        )}>20m</span>
+        <span className={cn(
+          "transition-colors duration-300",
+          elapsedSeconds >= 60 * 60 && 'text-destructive'
+        )}>60m</span>
       </div>
 
       {/* Controls */}
-      <div className="flex justify-center gap-4">
+      <div className="flex justify-center gap-4 relative">
         {!isRunning ? (
           <button
-            onClick={start}
-            className="flex items-center gap-2 btn-primary"
+            onClick={handleStart}
+            className="flex items-center gap-3 btn-primary text-lg"
           >
-            <Play className="w-4 h-4" />
+            <Play className="w-5 h-5" />
             {elapsedSeconds === 0 ? 'Start' : 'Resume'}
           </button>
         ) : (
           <button
             onClick={pause}
-            className="flex items-center gap-2 btn-secondary"
+            className="flex items-center gap-3 btn-secondary text-lg"
           >
-            <Pause className="w-4 h-4" />
+            <Pause className="w-5 h-5" />
             Pause
           </button>
         )}
-        
+
         <button
           onClick={reset}
-          className="flex items-center gap-2 btn-secondary"
+          className="flex items-center gap-3 btn-secondary text-lg disabled:opacity-40"
           disabled={elapsedSeconds === 0}
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-5 h-5" />
           Reset
         </button>
       </div>
@@ -129,12 +208,18 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
       {elapsedSeconds > 0 && (
         <button
           onClick={handleComplete}
-          className="mt-4 w-full py-3 bg-success text-success-foreground rounded-lg font-medium 
-                     hover:bg-success/90 transition-colors"
+          className="mt-6 w-full py-4 rounded-2xl font-bold text-lg
+                     bg-gradient-to-r from-success to-emerald-400 text-success-foreground
+                     hover:shadow-lg hover:shadow-success/30 transition-all duration-300
+                     active:scale-98 relative overflow-hidden group"
         >
-          Mark as Solved
+          <span className="relative z-10 flex items-center justify-center gap-2">
+            ✓ Mark as Solved
+          </span>
+          <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
         </button>
       )}
     </div>
   );
 };
+

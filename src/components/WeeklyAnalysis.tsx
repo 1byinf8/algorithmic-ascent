@@ -37,7 +37,7 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     weekStart.setHours(0, 0, 0, 0);
-    
+
     return entries.filter(e => new Date(e.completedAt) >= weekStart);
   };
 
@@ -78,7 +78,7 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
       setApiKeyStatus('empty');
       return false;
     }
-    
+
     // Basic validation - Gemini API keys start with "AIza"
     if (!key.startsWith('AIza')) {
       setError('Invalid API key format. Gemini API keys should start with "AIza"');
@@ -138,27 +138,61 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
       );
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData?.error?.message || '';
+
         if (response.status === 400) {
+          throw new Error('Invalid request. Please check your API key or try again.');
+        } else if (response.status === 401 || response.status === 403) {
           throw new Error('Invalid API key. Please check your Gemini API key and try again.');
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        } else {
+          throw new Error(`API error (${response.status}): ${errorMessage || 'Unknown error'}`);
         }
-        throw new Error('Failed to get analysis from Gemini. Check your API key.');
       }
 
       const data = await response.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
+
       if (!text) {
-        throw new Error('No response from Gemini');
+        // Check for safety/block reasons
+        const finishReason = data.candidates?.[0]?.finishReason;
+        if (finishReason === 'SAFETY') {
+          throw new Error('Response blocked by safety filters. Please try again.');
+        }
+        throw new Error('No response from Gemini. Please try again.');
       }
 
-      // Extract JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      // Improved JSON extraction - handle markdown code blocks
+      let jsonText = text;
+
+      // Remove markdown code block wrapper if present
+      const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        jsonText = codeBlockMatch[1].trim();
+      }
+
+      // Extract JSON object
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('Invalid response format from Gemini');
+        console.error('Failed to parse response:', text);
+        throw new Error('Invalid response format from Gemini. Please try again.');
       }
 
-      const result = JSON.parse(jsonMatch[0]);
-      setAnalysis(result);
+      try {
+        const result = JSON.parse(jsonMatch[0]);
+
+        // Validate required fields
+        if (!result.weakAreas || !result.strengths || !result.suggestions || !result.insights) {
+          throw new Error('Incomplete analysis response');
+        }
+
+        setAnalysis(result);
+      } catch (parseErr) {
+        console.error('JSON parse error:', parseErr, 'Text:', jsonMatch[0]);
+        throw new Error('Failed to parse analysis. Please try again.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
       console.error('Gemini API error:', err);
@@ -254,13 +288,13 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
                   className="input-field w-full"
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
                   Get your free API key from{' '}
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline"
                   >

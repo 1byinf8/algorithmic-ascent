@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UserProgress, ProblemState, BlackBookEntry } from '../types';
 import { Problem } from '../data/problemData';
 
@@ -11,13 +11,27 @@ interface StorageResponse<T> {
 // Existing useLocalStorage hook
 export function useLocalStorage<T>(
   key: string,
-  initialValue: T
+  initialValue: T,
+  persistToBackend: boolean = true
 ): [T, (value: T | ((prev: T) => T)) => Promise<void>, boolean] {
   const [storedValue, setStoredValue] = useState<T>(initialValue);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // FETCH
+  const [isLoading, setIsLoading] = useState<boolean>(persistToBackend);
+  
+  // Use ref to track latest value to avoid stale closures
+  const latestValueRef = useRef<T>(storedValue);
+  
+  // Keep ref in sync with state
   useEffect(() => {
+    latestValueRef.current = storedValue;
+  }, [storedValue]);
+
+  // FETCH (only if persisting to backend)
+  useEffect(() => {
+    if (!persistToBackend) {
+      setIsLoading(false);
+      return;
+    }
+    
     let mounted = true;
 
     const fetchData = async () => {
@@ -33,12 +47,15 @@ export function useLocalStorage<T>(
         const data: StorageResponse<T> = await response.json();
 
         if (mounted) {
-          setStoredValue(data.value !== null ? data.value : initialValue);
+          const newValue = data.value !== null ? data.value : initialValue;
+          setStoredValue(newValue);
+          latestValueRef.current = newValue;
         }
       } catch (err) {
         console.error(`Error fetching key "${key}"`, err);
         if (mounted) {
           setStoredValue(initialValue);
+          latestValueRef.current = initialValue;
         }
       } finally {
         if (mounted) {
@@ -52,18 +69,28 @@ export function useLocalStorage<T>(
     return () => {
       mounted = false;
     };
-  }, [key, initialValue]);
+  }, [key, initialValue, persistToBackend]);
 
-  // SET - Fixed to properly handle async and update local state immediately
+  // SET - Fixed to use ref for latest value to avoid stale closures
   const setValue = useCallback(
     async (value: T | ((prev: T) => T)) => {
+      // Use ref to get the absolute latest value
+      const currentValue = latestValueRef.current;
+      const valueToStore =
+        value instanceof Function ? value(currentValue) : value;
+
+      // Update ref immediately (synchronously)
+      latestValueRef.current = valueToStore;
+      
+      // Update local state immediately for better UX
+      setStoredValue(valueToStore);
+
+      // If not persisting, we're done
+      if (!persistToBackend) {
+        return;
+      }
+
       try {
-        const valueToStore =
-          value instanceof Function ? value(storedValue) : value;
-
-        // Update local state immediately for better UX
-        setStoredValue(valueToStore);
-
         // Then persist to backend
         const response = await fetch('/api/storage', {
           method: 'POST',
@@ -95,6 +122,7 @@ export function useLocalStorage<T>(
           const data: StorageResponse<T> = await response.json();
           if (data.value !== null) {
             setStoredValue(data.value);
+            latestValueRef.current = data.value;
           }
         } catch (revertErr) {
           console.error('Failed to revert value', revertErr);
@@ -102,7 +130,7 @@ export function useLocalStorage<T>(
         throw err;
       }
     },
-    [key, storedValue]
+    [key, persistToBackend]
   );
 
   return [storedValue, setValue, isLoading];
@@ -151,6 +179,28 @@ export const useProgress = () => {
     }));
   };
 
+  // NEW: Combined function to add entry AND update problem state atomically
+  // This prevents race conditions from separate async calls
+  const completeWithEntry = async (entry: BlackBookEntry) => {
+    await setProgress(prev => ({
+      ...prev,
+      entries: [...(prev.entries || []), entry],
+      problemStates: {
+        ...prev.problemStates,
+        [entry.problemId]: {
+          ...(prev.problemStates[entry.problemId] || {
+            problemId: entry.problemId,
+            status: 'not-started',
+            timerPhase: 'phase1',
+            elapsedTime: 0
+          }),
+          status: 'completed',
+          elapsedTime: entry.timeSpent
+        }
+      }
+    }));
+  };
+
   const getDayProgress = (day: number, problems: Problem[]) => {
     const completed = problems.filter(p => 
       progress.problemStates[p.id]?.status === 'completed'
@@ -177,6 +227,7 @@ export const useProgress = () => {
     progress,
     updateProblemState,
     addEntry,
+    completeWithEntry,
     getDayProgress,
     startDate,
     resetProgress,

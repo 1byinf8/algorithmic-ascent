@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { planData, Problem, getCurrentDay } from '@/data/problemData';
 import { BlackBookEntry } from '@/types';
-import { useProgress, useLocalStorage } from '@/hooks/useLocalStorage';
+import { useProgress } from '@/hooks/useLocalStorage';
 import { DayHeader } from '@/components/DayHeader';
 import { ProblemCard } from '@/components/ProblemCard';
 import { ProblemSolver } from '@/components/ProblemSolver';
@@ -17,30 +17,33 @@ import { Code2, Loader2 } from 'lucide-react';
 
 type ActiveTab = 'home' | 'entries' | 'stats' | 'settings';
 
-type ViewState = 
+type ViewState =
   | { type: 'list' }
   | { type: 'solving'; problem: Problem }
   | { type: 'entry-detail'; entry: BlackBookEntry };
 
 const Index = () => {
-  const { progress, updateProblemState, addEntry, getDayProgress, startDate, resetProgress, isLoading } = useProgress();
-  
-  const [viewState, setViewState] = useLocalStorage<ViewState>('dsa-view-state', { type: 'list' });
-  const [activeTab, setActiveTab] = useLocalStorage<ActiveTab>('dsa-active-tab', 'home');
-  
+  const { progress, updateProblemState, addEntry, completeWithEntry, getDayProgress, startDate, resetProgress, isLoading } = useProgress();
+
+  // Use local-only state for view state (no backend persistence needed)
+  // This fixes "ghost touch" and slow navigation issues
+  const [viewState, setViewState] = useState<ViewState>({ type: 'list' });
+  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
+
   // Calculate the current day based on start date
   const calculatedCurrentDay = useMemo(() => getCurrentDay(startDate), [startDate]);
-  
+
   // Initialize viewing day to current day, but allow user to navigate
-  const [viewingDay, setViewingDay] = useLocalStorage<number>('dsa-viewing-day', calculatedCurrentDay);
-  
-  // Update viewing day if it's still on day 1 and current day has progressed
+  // This also uses local-only state for responsiveness
+  const [viewingDay, setViewingDay] = useState<number>(calculatedCurrentDay);
+
+  // Update viewing day when calculatedCurrentDay changes (on initial load or date change)
   useEffect(() => {
-    if (viewingDay === 1 && calculatedCurrentDay > 1) {
+    if (calculatedCurrentDay !== viewingDay && calculatedCurrentDay > 1 && viewingDay === 1) {
       setViewingDay(calculatedCurrentDay);
     }
-  }, [calculatedCurrentDay, viewingDay, setViewingDay]);
-  
+  }, [calculatedCurrentDay]);
+
   const [isSaving, setIsSaving] = useState(false);
 
   const currentDayData = useMemo(() => {
@@ -52,7 +55,7 @@ const Index = () => {
   }, [viewingDay, currentDayData, progress.problemStates]);
 
   const allEntries = useMemo(() => {
-    return [...progress.entries].sort((a, b) => 
+    return [...progress.entries].sort((a, b) =>
       new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
     );
   }, [progress.entries]);
@@ -60,7 +63,7 @@ const Index = () => {
   const totalSolved = allEntries.length;
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  const weeklySolved = allEntries.filter(e => 
+  const weeklySolved = allEntries.filter(e =>
     new Date(e.completedAt) >= weekStart
   ).length;
 
@@ -69,7 +72,7 @@ const Index = () => {
     let count = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     for (let i = 0; i < 120; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(checkDate.getDate() - i);
@@ -79,7 +82,7 @@ const Index = () => {
         return entryDate.getTime() === checkDate.getTime();
       });
       if (hasEntry) count++;
-      else if (i === 0 && count === 0) continue; 
+      else if (i === 0 && count === 0) continue;
       else break;
     }
     return count;
@@ -92,12 +95,9 @@ const Index = () => {
   const handleProblemComplete = async (entry: BlackBookEntry) => {
     setIsSaving(true);
     try {
-      await addEntry(entry);
-      await updateProblemState(entry.problemId, {
-        status: 'completed',
-        elapsedTime: entry.timeSpent,
-      });
-      await setViewState({ type: 'list' });
+      // Use atomic update to prevent race conditions
+      await completeWithEntry(entry);
+      setViewState({ type: 'list' });
       toast.success('Problem solved! 🎉');
     } catch (error) {
       console.error('Error saving progress:', error);
@@ -126,10 +126,10 @@ const Index = () => {
   const handleResetProgress = async () => {
     try {
       await resetProgress();
-      await setViewState({ type: 'list' });
-      await setActiveTab('home');
+      setViewState({ type: 'list' });
+      setActiveTab('home');
       const newCurrentDay = getCurrentDay(new Date());
-      await setViewingDay(newCurrentDay);
+      setViewingDay(newCurrentDay);
       toast.success('Progress reset successfully!');
     } catch (error) {
       console.error('Error resetting progress:', error);
@@ -223,7 +223,7 @@ const Index = () => {
                   canGoPrev={viewingDay > 1}
                   canGoNext={viewingDay < 120}
                 />
-                
+
                 <div className="grid gap-3">
                   {currentDayData.problems.map(problem => (
                     <ProblemCard
@@ -262,7 +262,7 @@ const Index = () => {
                       <span className="font-mono font-medium">{weeklySolved}/10</span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div 
+                      <div
                         className="h-full bg-success transition-all duration-500"
                         style={{ width: `${Math.min((weeklySolved / 10) * 100, 100)}%` }}
                       />
