@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { planData, Problem } from '@/data/problemData';
+import { useState, useMemo, useEffect } from 'react';
+import { planData, Problem, getCurrentDay } from '@/data/problemData';
 import { BlackBookEntry } from '@/types';
 import { useProgress, useLocalStorage } from '@/hooks/useLocalStorage';
 import { DayHeader } from '@/components/DayHeader';
@@ -27,7 +27,20 @@ const Index = () => {
   
   const [viewState, setViewState] = useLocalStorage<ViewState>('dsa-view-state', { type: 'list' });
   const [activeTab, setActiveTab] = useLocalStorage<ActiveTab>('dsa-active-tab', 'home');
-  const [viewingDay, setViewingDay] = useLocalStorage<number>('dsa-viewing-day', 1);
+  
+  // Calculate the current day based on start date
+  const calculatedCurrentDay = useMemo(() => getCurrentDay(startDate), [startDate]);
+  
+  // Initialize viewing day to current day, but allow user to navigate
+  const [viewingDay, setViewingDay] = useLocalStorage<number>('dsa-viewing-day', calculatedCurrentDay);
+  
+  // Update viewing day if it's still on day 1 and current day has progressed
+  useEffect(() => {
+    if (viewingDay === 1 && calculatedCurrentDay > 1) {
+      setViewingDay(calculatedCurrentDay);
+    }
+  }, [calculatedCurrentDay, viewingDay, setViewingDay]);
+  
   const [isSaving, setIsSaving] = useState(false);
 
   const currentDayData = useMemo(() => {
@@ -76,22 +89,15 @@ const Index = () => {
     setViewState({ type: 'solving', problem });
   };
 
-  // Fixed to properly await async operations
   const handleProblemComplete = async (entry: BlackBookEntry) => {
     setIsSaving(true);
     try {
-      // Add entry first
       await addEntry(entry);
-      
-      // Then update problem state
       await updateProblemState(entry.problemId, {
         status: 'completed',
         elapsedTime: entry.timeSpent,
       });
-      
-      // Finally update view state
       await setViewState({ type: 'list' });
-      
       toast.success('Problem solved! 🎉');
     } catch (error) {
       console.error('Error saving progress:', error);
@@ -122,7 +128,8 @@ const Index = () => {
       await resetProgress();
       await setViewState({ type: 'list' });
       await setActiveTab('home');
-      await setViewingDay(1);
+      const newCurrentDay = getCurrentDay(new Date());
+      await setViewingDay(newCurrentDay);
       toast.success('Progress reset successfully!');
     } catch (error) {
       console.error('Error resetting progress:', error);
@@ -209,12 +216,12 @@ const Index = () => {
                 <DayHeader
                   dayData={currentDayData}
                   progress={dayProgress}
-                  currentDay={1}
+                  currentDay={calculatedCurrentDay}
                   viewingDay={viewingDay}
                   onPrevDay={() => setViewingDay(d => Math.max(1, d - 1))}
-                  onNextDay={() => setViewingDay(d => Math.min(planData.length, d + 1))}
+                  onNextDay={() => setViewingDay(d => Math.min(120, d + 1))}
                   canGoPrev={viewingDay > 1}
-                  canGoNext={viewingDay < planData.length}
+                  canGoNext={viewingDay < 120}
                 />
                 
                 <div className="grid gap-3">
@@ -260,6 +267,18 @@ const Index = () => {
                         style={{ width: `${Math.min((weeklySolved / 10) * 100, 100)}%` }}
                       />
                     </div>
+                  </div>
+                </div>
+
+                <div className="glass p-4 rounded-xl">
+                  <h3 className="font-semibold mb-2 text-sm text-muted-foreground">Quick Jump</h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewingDay(calculatedCurrentDay)}
+                      className="flex-1 text-xs py-2 px-3 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors"
+                    >
+                      Today (Day {calculatedCurrentDay})
+                    </button>
                   </div>
                 </div>
               </div>

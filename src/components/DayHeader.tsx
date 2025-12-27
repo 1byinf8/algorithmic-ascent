@@ -40,10 +40,16 @@ export const DayHeader = ({
           <ChevronLeft className="w-5 h-5" />
         </button>
         
-        <div className="text-center">
+        {/* Center section with fixed layout */}
+        <div className="flex-1 flex flex-col items-center">
+          {/* Day number - always centered */}
           <div className="flex items-center justify-center gap-2 mb-1">
             <Calendar className="w-4 h-4 text-primary" />
             <span className="font-mono text-lg font-bold">Day {dayData.day}</span>
+          </div>
+          
+          {/* Badges row - separate from day number */}
+          <div className="flex items-center justify-center gap-2 min-h-[20px]">
             {isToday && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                 Today
