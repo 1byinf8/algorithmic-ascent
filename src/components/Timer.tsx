@@ -179,6 +179,7 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
         {!isRunning ? (
           <button
             onClick={handleStart}
+            onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
             className="flex items-center gap-3 btn-primary text-lg"
           >
             <Play className="w-5 h-5" />
@@ -187,6 +188,7 @@ export const Timer = ({ problemId, onComplete, className }: TimerProps) => {
         ) : (
           <button
             onClick={pause}
+            onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
             className="flex items-center gap-3 btn-secondary text-lg"
           >
             <Pause className="w-5 h-5" />
