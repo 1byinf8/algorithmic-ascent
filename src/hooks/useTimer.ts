@@ -8,6 +8,8 @@ export interface TimerPhaseInfo {
 
 export const useTimer = (problemId: string) => {
   // Persist the start time and accumulated paused time
+  // Don't persist timer state to backend API - it's session-local data
+  // Using localStorage only prevents network failures from reverting state
   const [timerState, setTimerState] = useLocalStorage<{
     isRunning: boolean;
     startTime: number | null; // Timestamp when timer started/resumed
@@ -16,7 +18,7 @@ export const useTimer = (problemId: string) => {
     isRunning: false,
     startTime: null,
     accumulatedTime: 0,
-  });
+  }, false);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<number | null>(null);
