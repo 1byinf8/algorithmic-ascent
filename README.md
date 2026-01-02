@@ -1,18 +1,18 @@
-# Algorithmic Ascent 🚀
+# Algorithmic Ascent
 
 A 124-day competitive programming training tracker with AI-powered insights, progressive hints, and detailed progress analytics.
 
-## ✨ Features
+## Features
 
 ### For Users
 
-#### 📅 Study Plan & Progress Tracking
+#### Study Plan & Progress Tracking
 - **124-day structured curriculum** covering Game Theory, DP, Greedy, Graphs, and more
 - **Daily problem sets** with curated problems from Codeforces, CSES, and AtCoder
 - **Progress tracking** - mark problems as completed, track streaks
 - **Dynamic weekly targets** based on your current week's plan
 
-#### ⏱️ Smart Timer System
+#### Smart Timer System
 - **3-phase timer** for focused problem-solving:
   - 🟣 **Phase 1 (0-20min)**: NO KEYBOARD - Read & Think only
   - 🟡 **Phase 2 (20-60min)**: CODE MODE - Write your solution
@@ -20,7 +20,7 @@ A 124-day competitive programming training tracker with AI-powered insights, pro
 - **Sound notifications** on phase transitions
 - **Persistent timer state** - continues even after page refresh
 
-#### 💡 Progressive Hints (AI-Powered)
+#### Progressive Hints (AI-Powered)
 - **LLM-generated hints** for each problem
 - Hints unlock progressively:
   - **20 min**: Hint 1 (gentle nudge)
@@ -28,19 +28,19 @@ A 124-day competitive programming training tracker with AI-powered insights, pro
   - **60 min**: Hint 3 (near solution)
 - Hints are **cached** - won't re-fetch on restart
 
-#### 📓 Black Book
+#### Black Book
 - **Record your learnings** after each problem
 - Select from **predefined pattern tags** (DP, Greedy, Graph, etc.)
 - Track key observations, mistakes, and time spent
 - Multi-tag support for problems using multiple patterns
 
-#### 📊 Stats & Analytics
+#### Stats & Analytics
 - **Pattern breakdown** - see which patterns you've practiced most
 - **Weekly progress tracking**
 - **AI Weekly Analysis** - get personalized insights using Gemini API
 - Analysis history with **localStorage caching** for fast loads
 
-#### ⚙️ Settings
+#### Settings
 - **Hide problem ratings** to avoid bias
 - **Sound toggle** for timer notifications
 - **Export/Import data** for backup
@@ -49,13 +49,13 @@ A 124-day competitive programming training tracker with AI-powered insights, pro
 
 ### For Developers
 
-#### 🛠️ Dev Mode (Localhost Only)
+#### Dev Mode (Localhost Only)
 - **Timer slider control** - test hints without waiting 60 minutes!
 - Drag slider to any time (0-70 min)
 - Quick-test hint unlock thresholds
 - **Hidden in production** - only visible on localhost
 
-#### 📁 Code Architecture
+#### Code Architecture
 
 ```
 src/
@@ -81,7 +81,7 @@ src/
     └── Index.tsx           # Main app page
 ```
 
-#### 🔧 Key Utilities
+#### Key Utilities
 
 | File | Purpose |
 |------|---------|
@@ -91,7 +91,7 @@ src/
 | `lib/devMode.ts` | Localhost detection & dev mode state |
 | `hooks/useTimer.ts` | Timer with `setElapsedManually` for dev testing |
 
-#### 🚀 Running Locally
+#### Running Locally
 
 ```bash
 # Install dependencies
@@ -104,7 +104,7 @@ vercel dev
 npm run build
 ```
 
-#### 🔑 Environment Setup
+#### Environment Setup
 - Add your **Gemini API key** in Settings to enable:
   - Weekly AI Analysis
   - Progressive Hints
