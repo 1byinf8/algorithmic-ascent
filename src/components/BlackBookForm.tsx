@@ -3,6 +3,44 @@ import { BlackBookEntry } from '@/types';
 import { Check, X, BookOpen, Lightbulb, AlertTriangle, Target, Wrench, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Predefined patterns for consistency in stats
+const PATTERN_TAGS = [
+  'Game Theory',
+  'Greedy',
+  'DP',
+  'Binary Search',
+  'Two Pointers',
+  'Sliding Window',
+  'Graph - BFS',
+  'Graph - DFS',
+  'Graph - Dijkstra',
+  'Graph - MST',
+  'Graph - Topological Sort',
+  'Segment Tree',
+  'Fenwick Tree',
+  'Union Find',
+  'Math',
+  'Number Theory',
+  'Combinatorics',
+  'String - Hashing',
+  'String - KMP',
+  'String - Z-function',
+  'Trie',
+  'Stack',
+  'Queue',
+  'Heap',
+  'Sorting',
+  'Prefix Sum',
+  'Difference Array',
+  'Bit Manipulation',
+  'Divide & Conquer',
+  'Meet in the Middle',
+  'Constructive',
+  'Implementation',
+  'Simulation',
+  'Ad Hoc',
+] as const;
+
 interface BlackBookFormProps {
   problemId: string;
   problemTitle: string;
@@ -11,12 +49,12 @@ interface BlackBookFormProps {
   onCancel: () => void;
 }
 
-export const BlackBookForm = ({ 
-  problemId, 
-  problemTitle, 
-  timeSpent, 
-  onSubmit, 
-  onCancel 
+export const BlackBookForm = ({
+  problemId,
+  problemTitle,
+  timeSpent,
+  onSubmit,
+  onCancel
 }: BlackBookFormProps) => {
   const [formData, setFormData] = useState({
     typePattern: '',
@@ -30,7 +68,11 @@ export const BlackBookForm = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (!formData.typePattern) {
+      return; // Require at least one pattern
+    }
+
     const entry: BlackBookEntry = {
       problemId,
       problem: problemTitle,
@@ -42,40 +84,53 @@ export const BlackBookForm = ({
     onSubmit(entry);
   };
 
+  const togglePattern = (pattern: string) => {
+    setFormData(prev => {
+      const currentPatterns = prev.typePattern ? prev.typePattern.split(', ') : [];
+      const isSelected = currentPatterns.includes(pattern);
+
+      if (isSelected) {
+        // Remove pattern
+        const newPatterns = currentPatterns.filter(p => p !== pattern);
+        return { ...prev, typePattern: newPatterns.join(', ') };
+      } else {
+        // Add pattern
+        const newPatterns = [...currentPatterns, pattern];
+        return { ...prev, typePattern: newPatterns.join(', ') };
+      }
+    });
+  };
+
+  const selectedPatterns = formData.typePattern ? formData.typePattern.split(', ') : [];
+
   const fields = [
-    { 
-      key: 'typePattern', 
-      label: 'Type/Pattern', 
-      icon: BookOpen,
-      placeholder: 'e.g., DP, Greedy, Binary Search, Game Theory...',
-    },
-    { 
-      key: 'keyObservation', 
-      label: 'Key Observation', 
+    {
+      key: 'keyObservation',
+      label: 'Key Observation',
       icon: Lightbulb,
       placeholder: 'What insight unlocked the solution?',
     },
-    { 
-      key: 'invariant', 
-      label: 'Invariant', 
+    {
+      key: 'invariant',
+      label: 'Invariant',
       icon: Target,
       placeholder: 'What property remains constant?',
     },
-    { 
-      key: 'whyBruteFails', 
-      label: 'Why Brute Force Fails', 
+    {
+      key: 'whyBruteFails',
+      label: 'Why Brute Force Fails',
       icon: AlertTriangle,
       placeholder: 'Time/space complexity issues...',
     },
-    { 
-      key: 'finalApproach', 
-      label: 'Final Approach', 
+    {
+      key: 'finalApproach',
+      label: 'Final Approach',
       icon: Wrench,
       placeholder: 'Describe your solution strategy...',
     },
-    { 
-      key: 'mistakeIMade', 
-      label: 'Mistake I Made', 
+    {
+      key: 'mistakeIMade',
+      label: 'Mistake I Made',
       icon: XCircle,
       placeholder: 'What went wrong initially?',
     },
@@ -88,7 +143,7 @@ export const BlackBookForm = ({
           <BookOpen className="w-5 h-5 text-primary" />
           Black Book Entry
         </h2>
-        <button 
+        <button
           onClick={onCancel}
           className="p-2 hover:bg-muted rounded-lg transition-colors"
         >
@@ -105,6 +160,46 @@ export const BlackBookForm = ({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Pattern Selection */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <BookOpen className="w-4 h-4" />
+            Type/Pattern <span className="text-destructive">*</span>
+          </label>
+          <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border border-border max-h-[180px] overflow-y-auto">
+            {PATTERN_TAGS.map(pattern => {
+              const isSelected = selectedPatterns.includes(pattern);
+              return (
+                <button
+                  key={pattern}
+                  type="button"
+                  onClick={() => togglePattern(pattern)}
+                  className={cn(
+                    "px-3 py-1.5 text-sm rounded-full border transition-all",
+                    isSelected
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border hover:border-primary/50 hover:bg-muted"
+                  )}
+                >
+                  {isSelected && <Check className="w-3 h-3 inline mr-1" />}
+                  {pattern}
+                </button>
+              );
+            })}
+          </div>
+          {selectedPatterns.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Selected: {selectedPatterns.join(', ')}
+            </p>
+          )}
+          {selectedPatterns.length === 0 && (
+            <p className="text-xs text-destructive">
+              Please select at least one pattern
+            </p>
+          )}
+        </div>
+
+        {/* Other Fields */}
         {fields.map(({ key, label, icon: Icon, placeholder }) => (
           <div key={key} className="space-y-1">
             <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -125,14 +220,14 @@ export const BlackBookForm = ({
         <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
           <button
             type="button"
-            onClick={() => setFormData(prev => ({ 
-              ...prev, 
-              solvedWithoutEditorial: !prev.solvedWithoutEditorial 
+            onClick={() => setFormData(prev => ({
+              ...prev,
+              solvedWithoutEditorial: !prev.solvedWithoutEditorial
             }))}
             className={cn(
               "w-6 h-6 rounded-md flex items-center justify-center transition-colors",
-              formData.solvedWithoutEditorial 
-                ? "bg-success text-success-foreground" 
+              formData.solvedWithoutEditorial
+                ? "bg-success text-success-foreground"
                 : "bg-muted border-2 border-border"
             )}
           >
@@ -153,7 +248,11 @@ export const BlackBookForm = ({
           </button>
           <button
             type="submit"
-            className="flex-1 btn-primary"
+            disabled={selectedPatterns.length === 0}
+            className={cn(
+              "flex-1 btn-primary",
+              selectedPatterns.length === 0 && "opacity-50 cursor-not-allowed"
+            )}
           >
             Save Entry
           </button>

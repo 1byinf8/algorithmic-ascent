@@ -14,6 +14,7 @@ import { SettingsView } from '@/components/SettingsView';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { toast } from 'sonner';
 import { Code2, Loader2 } from 'lucide-react';
+import { getTimerSettings } from '@/lib/sounds';
 
 type ActiveTab = 'home' | 'entries' | 'stats' | 'settings';
 
@@ -46,6 +47,9 @@ const Index = () => {
 
   const [isSaving, setIsSaving] = useState(false);
 
+  // Get hideRatings setting - re-read on every render to pick up changes from settings
+  const hideRatings = getTimerSettings().hideRatings;
+
   const currentDayData = useMemo(() => {
     return planData.find(d => d.day === viewingDay) || planData[0];
   }, [viewingDay]);
@@ -61,11 +65,43 @@ const Index = () => {
   }, [progress.entries]);
 
   const totalSolved = allEntries.length;
+
+  // Calculate week boundaries based on calendar week (Sunday to Saturday)
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  weekStart.setHours(0, 0, 0, 0);
+
   const weeklySolved = allEntries.filter(e =>
     new Date(e.completedAt) >= weekStart
   ).length;
+
+  // Calculate weekly target dynamically from plan data
+  // Find which days fall in the current week and sum up their problems
+  const weeklyTarget = useMemo(() => {
+    // Get the day of week for the start date (0 = Sunday)
+    const startDayOfWeek = new Date(startDate).getDay();
+
+    // Calculate which plan days fall in the current calendar week
+    // Current week starts at: currentDay - (today's day of week) + adjustment for start day offset
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday
+
+    // Days in current week: from (currentDay - dayOfWeek) to (currentDay - dayOfWeek + 6)
+    const weekStartDay = Math.max(1, calculatedCurrentDay - dayOfWeek);
+    const weekEndDay = weekStartDay + 6;
+
+    // Sum problems for all days in this week
+    let totalProblems = 0;
+    for (let d = weekStartDay; d <= weekEndDay; d++) {
+      const dayData = planData.find(pd => pd.day === d);
+      if (dayData) {
+        // Count only non-optional problems
+        totalProblems += dayData.problems.filter(p => !p.isOptional).length;
+      }
+    }
+
+    return totalProblems || 10; // Fallback to 10 if no data
+  }, [calculatedCurrentDay, startDate]);
 
   const streak = useMemo(() => {
     if (allEntries.length === 0) return 0;
@@ -73,7 +109,7 @@ const Index = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 124; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(checkDate.getDate() - i);
       const hasEntry = allEntries.some(e => {
@@ -155,6 +191,7 @@ const Index = () => {
       <div className="min-h-screen bg-background">
         <ProblemSolver
           problem={viewState.problem}
+          hideRatings={hideRatings}
           onComplete={handleProblemComplete}
           onBack={() => setViewState({ type: 'list' })}
         />
@@ -192,7 +229,7 @@ const Index = () => {
             <h1 className="font-bold text-base md:text-lg tracking-tight">DSA Tracker</h1>
           </div>
           <div className="text-xs md:text-sm text-muted-foreground">
-            Day {viewingDay}/120
+            Day {viewingDay}/124
           </div>
         </div>
       </header>
@@ -219,9 +256,9 @@ const Index = () => {
                   currentDay={calculatedCurrentDay}
                   viewingDay={viewingDay}
                   onPrevDay={() => setViewingDay(d => Math.max(1, d - 1))}
-                  onNextDay={() => setViewingDay(d => Math.min(120, d + 1))}
+                  onNextDay={() => setViewingDay(d => Math.min(124, d + 1))}
                   canGoPrev={viewingDay > 1}
-                  canGoNext={viewingDay < 120}
+                  canGoNext={viewingDay < 124}
                 />
 
                 <div className="grid gap-3">
@@ -231,6 +268,7 @@ const Index = () => {
                       problem={problem}
                       status={progress.problemStates[problem.id]?.status || 'not-started'}
                       isOptional={problem.isOptional}
+                      hideRatings={hideRatings}
                       onClick={() => handleProblemClick(problem)}
                     />
                   ))}
@@ -259,12 +297,12 @@ const Index = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Completed</span>
-                      <span className="font-mono font-medium">{weeklySolved}/10</span>
+                      <span className="font-mono font-medium">{weeklySolved}/{weeklyTarget}</span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full bg-success transition-all duration-500"
-                        style={{ width: `${Math.min((weeklySolved / 10) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((weeklySolved / weeklyTarget) * 100, 100)}%` }}
                       />
                     </div>
                   </div>

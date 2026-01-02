@@ -6,6 +6,7 @@ interface ProblemCardProps {
   problem: Problem;
   status: 'not-started' | 'in-progress' | 'completed';
   isOptional?: boolean;
+  hideRatings?: boolean;
   onClick: () => void;
 }
 
@@ -34,7 +35,7 @@ const statusConfig = {
   },
 };
 
-export const ProblemCard = ({ problem, status, isOptional, onClick }: ProblemCardProps) => {
+export const ProblemCard = ({ problem, status, isOptional, hideRatings, onClick }: ProblemCardProps) => {
   const StatusIcon = statusConfig[status].icon;
 
   return (
@@ -69,7 +70,7 @@ export const ProblemCard = ({ problem, status, isOptional, onClick }: ProblemCar
           )}>
             {problem.platform}
           </span>
-          {problem.rating && (
+          {problem.rating && !hideRatings && (
             <span className="text-xs text-muted-foreground">
               Rating: {problem.rating}
             </span>
@@ -92,7 +93,7 @@ export const ProblemCard = ({ problem, status, isOptional, onClick }: ProblemCar
           )}>
             {statusConfig[status].label}
           </span>
-          
+
           <a
             href={problem.url}
             target="_blank"

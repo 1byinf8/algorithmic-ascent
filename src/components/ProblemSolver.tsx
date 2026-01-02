@@ -8,13 +8,14 @@ import { cn } from '@/lib/utils';
 
 interface ProblemSolverProps {
   problem: Problem;
+  hideRatings?: boolean;
   onComplete: (entry: BlackBookEntry) => void;
   onBack: () => void;
 }
 
 type SolverState = 'ready' | 'timing' | 'form';
 
-export const ProblemSolver = ({ problem, onComplete, onBack }: ProblemSolverProps) => {
+export const ProblemSolver = ({ problem, hideRatings, onComplete, onBack }: ProblemSolverProps) => {
   const [state, setState] = useState<SolverState>('ready');
   const [timeSpent, setTimeSpent] = useState(0);
 
@@ -35,7 +36,7 @@ export const ProblemSolver = ({ problem, onComplete, onBack }: ProblemSolverProp
     <div className="min-h-screen bg-background p-4">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <button 
+        <button
           onClick={onBack}
           className="p-2 hover:bg-muted rounded-lg transition-colors"
         >
@@ -45,7 +46,7 @@ export const ProblemSolver = ({ problem, onComplete, onBack }: ProblemSolverProp
           <h1 className="font-semibold text-lg">{problem.title}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>{problem.platform}</span>
-            {problem.rating && (
+            {problem.rating && !hideRatings && (
               <>
                 <span>•</span>
                 <span>Rating: {problem.rating}</span>
@@ -69,7 +70,7 @@ export const ProblemSolver = ({ problem, onComplete, onBack }: ProblemSolverProp
           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
             <Play className="w-10 h-10 text-primary" />
           </div>
-          
+
           <h2 className="text-2xl font-semibold mb-2">Ready to Solve?</h2>
           <p className="text-muted-foreground mb-6">
             Timer will guide you through the solving phases
@@ -116,7 +117,7 @@ export const ProblemSolver = ({ problem, onComplete, onBack }: ProblemSolverProp
 
       {/* Timer State */}
       {state === 'timing' && (
-        <Timer 
+        <Timer
           problemId={problem.id}
           onComplete={handleTimerComplete}
           className="animate-fade-in"

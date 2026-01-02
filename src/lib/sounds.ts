@@ -105,6 +105,7 @@ export interface TimerSettings {
   baseThreshold: number;
   monthlyIncrease: number;
   soundsEnabled: boolean;
+  hideRatings: boolean;
 }
 
 export const getTimerSettings = (): TimerSettings => {
@@ -120,6 +121,7 @@ export const getTimerSettings = (): TimerSettings => {
     baseThreshold: 1500,
     monthlyIncrease: 100,
     soundsEnabled: true,
+    hideRatings: false,
   };
 };
 

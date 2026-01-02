@@ -14,14 +14,17 @@ export const StatsView = ({ entries, startDate }: StatsViewProps) => {
   const totalTime = entries.reduce((sum, e) => sum + e.timeSpent, 0);
   const avgTime = totalProblems > 0 ? Math.floor(totalTime / totalProblems / 60) : 0;
   const withoutEditorial = entries.filter(e => e.solvedWithoutEditorial).length;
-  const editorialPercentage = totalProblems > 0 
-    ? Math.round((withoutEditorial / totalProblems) * 100) 
+  const editorialPercentage = totalProblems > 0
+    ? Math.round((withoutEditorial / totalProblems) * 100)
     : 0;
 
-  // Pattern breakdown
+  // Pattern breakdown - count each pattern separately (multi-tag support)
   const patternCounts = entries.reduce((acc, e) => {
-    const pattern = e.typePattern.split(',')[0].trim();
-    acc[pattern] = (acc[pattern] || 0) + 1;
+    // Split patterns by comma and count each one
+    const patterns = e.typePattern.split(',').map(p => p.trim()).filter(p => p);
+    patterns.forEach(pattern => {
+      acc[pattern] = (acc[pattern] || 0) + 1;
+    });
     return acc;
   }, {} as Record<string, number>);
 
@@ -35,31 +38,31 @@ export const StatsView = ({ entries, startDate }: StatsViewProps) => {
   ) + 1;
 
   const stats = [
-    { 
-      icon: Trophy, 
-      label: 'Total Solved', 
-      value: totalProblems, 
+    {
+      icon: Trophy,
+      label: 'Total Solved',
+      value: totalProblems,
       color: 'text-primary',
       bgColor: 'bg-primary/10'
     },
-    { 
-      icon: Clock, 
-      label: 'Avg Time', 
-      value: `${avgTime}m`, 
+    {
+      icon: Clock,
+      label: 'Avg Time',
+      value: `${avgTime}m`,
       color: 'text-warning',
       bgColor: 'bg-warning/10'
     },
-    { 
-      icon: Target, 
-      label: 'No Editorial', 
-      value: `${editorialPercentage}%`, 
+    {
+      icon: Target,
+      label: 'No Editorial',
+      value: `${editorialPercentage}%`,
       color: 'text-success',
       bgColor: 'bg-success/10'
     },
-    { 
-      icon: TrendingUp, 
-      label: 'Day', 
-      value: daysSinceStart, 
+    {
+      icon: TrendingUp,
+      label: 'Day',
+      value: daysSinceStart,
       color: 'text-accent',
       bgColor: 'bg-accent/10'
     },
@@ -91,7 +94,7 @@ export const StatsView = ({ entries, startDate }: StatsViewProps) => {
           <Brain className="w-5 h-5 text-primary" />
           <h2 className="font-semibold text-lg">Pattern Breakdown</h2>
         </div>
-        
+
         {topPatterns.length > 0 ? (
           <div className="space-y-3">
             {topPatterns.map(([pattern, count]) => (
@@ -101,7 +104,7 @@ export const StatsView = ({ entries, startDate }: StatsViewProps) => {
                   <span className="font-mono text-muted-foreground">{count} problems</span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
                     style={{ width: `${(count / totalProblems) * 100}%` }}
                   />
@@ -122,16 +125,16 @@ export const StatsView = ({ entries, startDate }: StatsViewProps) => {
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Days Active</span>
-            <span className="font-mono font-medium">{daysSinceStart}/120</span>
+            <span className="font-mono font-medium">{daysSinceStart}/124</span>
           </div>
           <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-success to-primary transition-all duration-500"
-              style={{ width: `${(daysSinceStart / 120) * 100}%` }}
+              style={{ width: `${(daysSinceStart / 124) * 100}%` }}
             />
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            {120 - daysSinceStart} days remaining in your 120-day journey
+            {124 - daysSinceStart} days remaining in your 124-day journey
           </p>
         </div>
       </div>

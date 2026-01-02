@@ -44,7 +44,7 @@ export const SettingsView = ({ startDate, onResetProgress, onExportData }: Setti
           Started on {formatDate(startDate)}
         </p>
         <p className="text-sm text-muted-foreground">
-          120-day CP Domination Plan
+          124-day CP Domination Plan
         </p>
       </div>
 
@@ -153,6 +153,28 @@ export const SettingsView = ({ startDate, onResetProgress, onExportData }: Setti
               <span>+0</span>
               <span>+200</span>
             </div>
+          </div>
+
+          {/* Hide Ratings Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <div>
+              <p className="font-medium text-sm">Hide Problem Ratings</p>
+              <p className="text-xs text-muted-foreground">
+                Hide ratings to avoid bias when solving
+              </p>
+            </div>
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, hideRatings: !prev.hideRatings }))}
+              className={cn(
+                "w-12 h-6 rounded-full transition-colors relative",
+                settings.hideRatings ? "bg-success" : "bg-muted"
+              )}
+            >
+              <div className={cn(
+                "absolute top-1 w-4 h-4 rounded-full bg-white transition-transform",
+                settings.hideRatings ? "translate-x-7" : "translate-x-1"
+              )} />
+            </button>
           </div>
 
           {/* Info */}
