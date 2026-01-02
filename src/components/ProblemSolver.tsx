@@ -119,6 +119,8 @@ export const ProblemSolver = ({ problem, hideRatings, onComplete, onBack }: Prob
       {state === 'timing' && (
         <Timer
           problemId={problem.id}
+          problemTitle={problem.title}
+          problemUrl={problem.url}
           onComplete={handleTimerComplete}
           className="animate-fade-in"
         />

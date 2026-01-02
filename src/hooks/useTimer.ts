@@ -115,6 +115,23 @@ export const useTimer = (problemId: string) => {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Dev mode: manually set elapsed time (for testing hints, phases, etc)
+  const setElapsedManually = (seconds: number) => {
+    // Clear any running interval first
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    
+    // Directly set the state without calling pause() to avoid race conditions
+    setTimerState({
+      isRunning: false,
+      startTime: null,
+      accumulatedTime: seconds,
+    });
+    setElapsedSeconds(seconds);
+  };
+
   return {
     isRunning: timerState.isRunning,
     elapsedSeconds,
@@ -125,5 +142,6 @@ export const useTimer = (problemId: string) => {
     reset,
     stop,
     formatTime,
+    setElapsedManually, // Dev mode only
   };
 };

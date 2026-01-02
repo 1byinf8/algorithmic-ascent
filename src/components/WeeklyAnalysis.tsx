@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { BlackBookEntry } from '@/types';
-import { BookOpen, Sparkles, AlertCircle, Loader2, Key, Check, X } from 'lucide-react';
+import { BookOpen, Sparkles, AlertCircle, Loader2, Key, Check, X, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { callGemini, parseJsonResponse, isValidApiKey } from '@/lib/llm';
+import { weeklyAnalysisPrompt, isValidWeeklyAnalysisResponse, WeeklyAnalysisResponse } from '@/lib/prompts';
 
 interface WeeklyAnalysisProps {
   entries: BlackBookEntry[];
@@ -20,17 +21,24 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Store ALL analyses in database (history)
+  // Local cache key for analysis history
+  const CACHE_KEY = 'weekly_analysis_cache';
+  const DB_KEY = 'weekly_analysis_history';
+
+  // Store analyses with caching strategy
   interface StoredAnalysis {
     result: AnalysisResult;
     date: string;
-    id: string; // unique id for each analysis
+    id: string;
   }
-  const [analysisHistory, setAnalysisHistory, isLoadingAnalysis] = useLocalStorage<StoredAnalysis[]>(
-    'weekly_analysis_history',
-    [],
-    true // persist to backend
-  );
+
+  const [analysisHistory, setAnalysisHistory] = useState<StoredAnalysis[]>([]);
+  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(true);
+  const [hasFetchedFromDb, setHasFetchedFromDb] = useState(false);
+
+  // Pagination state for past analyses
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const INITIAL_HISTORY_COUNT = 5;
 
   // Track which historical analysis is expanded
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
@@ -41,6 +49,64 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
   const [error, setError] = useState<string | null>(null);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<'empty' | 'saved' | 'validating'>('empty');
+
+  // Load from cache first, then DB if needed
+  useEffect(() => {
+    const loadAnalysisHistory = async () => {
+      // Step 1: Try loading from localStorage cache first
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          setAnalysisHistory(parsed);
+          setIsLoadingAnalysis(false);
+          setHasFetchedFromDb(true); // Cache exists, no need to fetch
+          return;
+        } catch (e) {
+          console.error('Failed to parse cached analysis data:', e);
+        }
+      }
+
+      // Step 2: Cache miss - fetch from DB
+      try {
+        const response = await fetch(`/api/storage?key=${encodeURIComponent(DB_KEY)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const history = data.value || [];
+          setAnalysisHistory(history);
+          // Save to cache
+          localStorage.setItem(CACHE_KEY, JSON.stringify(history));
+        }
+      } catch (err) {
+        console.error('Failed to fetch analysis history from DB:', err);
+      } finally {
+        setIsLoadingAnalysis(false);
+        setHasFetchedFromDb(true);
+      }
+    };
+
+    loadAnalysisHistory();
+  }, []);
+
+  // Save analysis with both cache and DB persistence
+  const saveAnalysisHistory = useCallback(async (newHistory: StoredAnalysis[]) => {
+    // Update state immediately
+    setAnalysisHistory(newHistory);
+
+    // Update localStorage cache
+    localStorage.setItem(CACHE_KEY, JSON.stringify(newHistory));
+
+    // Persist to DB in background
+    try {
+      await fetch('/api/storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: DB_KEY, value: newHistory })
+      });
+    } catch (err) {
+      console.error('Failed to persist analysis to DB:', err);
+    }
+  }, []);
 
   // Get the latest analysis
   const latestAnalysis = analysisHistory.length > 0 ? analysisHistory[0] : null;
@@ -63,8 +129,8 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
     return entries.filter(e => new Date(e.completedAt) >= weekStart);
   };
 
-  const generatePrompt = (weekEntries: BlackBookEntry[]) => {
-    const entriesData = weekEntries.map(e => ({
+  const getFormattedEntries = (weekEntries: BlackBookEntry[]) => {
+    return weekEntries.map(e => ({
       problem: e.problem,
       pattern: e.typePattern,
       timeSpent: `${Math.floor(e.timeSpent / 60)}m`,
@@ -72,28 +138,6 @@ export const WeeklyAnalysis = ({ entries, startDate }: WeeklyAnalysisProps) => {
       keyObservation: e.keyObservation,
       mistake: e.mistakeIMade,
     }));
-
-    return `You are an expert competitive programming coach analyzing a student's weekly performance.
-
-**This Week's Problems Solved:**
-${JSON.stringify(entriesData, null, 2)}
-
-**Analysis Required:**
-1. Identify 2-3 weak areas/patterns where the student struggled or needed editorials
-2. Highlight 2-3 strengths (patterns solved independently, good time management)
-3. Provide 3-4 actionable suggestions for improvement
-4. Give overall insights on their learning trajectory
-
-**CRITICAL: Response Format**
-Respond with ONLY a valid JSON object. Do NOT include any markdown formatting, code blocks, or backticks. Just the raw JSON:
-{
-  "weakAreas": ["area1", "area2"],
-  "strengths": ["strength1", "strength2"],
-  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
-  "insights": "2-3 sentence summary of overall performance"
-}
-
-Be specific, constructive, and encouraging. Focus on DSA concepts and problem-solving strategies.`;
   };
 
   const validateAndSaveApiKey = (key: string) => {
@@ -102,8 +146,8 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
       return false;
     }
 
-    // Basic validation - Gemini API keys start with "AIza"
-    if (!key.startsWith('AIza')) {
+    // Use centralized validation
+    if (!isValidApiKey(key)) {
       setError('Invalid API key format. Gemini API keys should start with "AIza"');
       return false;
     }
@@ -143,109 +187,44 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
     setError(null);
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [{ text: generatePrompt(weekEntries) }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2048,
-            },
-            safetySettings: [
-              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
-            ]
-          })
-        }
-      );
+      // Use centralized prompt generator
+      const entriesData = getFormattedEntries(weekEntries);
+      const prompt = weeklyAnalysisPrompt(entriesData);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData?.error?.message || errorData?.error?.status || '';
-        const detailedError = errorMessage ? ` - ${errorMessage}` : '';
+      // Use centralized LLM client
+      const response = await callGemini(prompt, apiKey, {
+        temperature: 0.7,
+        maxOutputTokens: 2048
+      });
 
-        if (response.status === 400) {
-          throw new Error(`Invalid request${detailedError}`);
-        } else if (response.status === 401 || response.status === 403) {
-          throw new Error('Invalid API key. Please check your Gemini API key.');
-        } else if (response.status === 429) {
-          throw new Error(`Rate limit exceeded. You are on the free tier, please wait a minute before trying again.${detailedError}`);
-        } else if (response.status === 404) {
-          throw new Error(`Model not found${detailedError}. Ensure 'gemini-2.5-flash' is available.`);
-        } else {
-          throw new Error(`API error (${response.status})${detailedError}`);
-        }
+      if (!response.success) {
+        throw new Error(response.error || 'Analysis failed');
       }
 
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      // Use centralized JSON parser
+      const result = parseJsonResponse<WeeklyAnalysisResponse>(response.text);
 
-      if (!text) {
-        // Check for safety/block reasons
-        const finishReason = data.candidates?.[0]?.finishReason;
-        if (finishReason === 'SAFETY') {
-          throw new Error('Response blocked by safety filters. Please try again.');
-        }
-        throw new Error('No response from Gemini. Please try again.');
+      // Use centralized validation
+      if (!isValidWeeklyAnalysisResponse(result)) {
+        throw new Error('Incomplete response from LLM');
       }
 
-      // Parse JSON - strip markdown code blocks if present
-      let jsonText = text.trim();
+      // Save to database (prepend to history array)
+      const dateStr = new Date().toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
 
-      // Remove markdown code blocks (handle various formats)
-      if (jsonText.includes('```')) {
-        // Remove ```json or ``` at start
-        jsonText = jsonText.replace(/^```(?:json)?\s*\n?/i, '');
-        // Remove ``` at end
-        jsonText = jsonText.replace(/\n?```\s*$/i, '');
-      }
+      const newAnalysis: StoredAnalysis = {
+        result,
+        date: dateStr,
+        id: Date.now().toString()
+      };
 
-      jsonText = jsonText.trim();
-
-      // If still not valid JSON, try to extract the JSON object
-      if (!jsonText.startsWith('{')) {
-        const match = jsonText.match(/\{[\s\S]*\}/);
-        if (match) {
-          jsonText = match[0];
-        }
-      }
-
-      try {
-        const result = JSON.parse(jsonText);
-        if (!result.weakAreas || !result.strengths || !result.suggestions || !result.insights) {
-          throw new Error('Incomplete response');
-        }
-
-        // Save to database (prepend to history array)
-        const dateStr = new Date().toLocaleDateString('en-US', {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-
-        const newAnalysis: StoredAnalysis = {
-          result,
-          date: dateStr,
-          id: Date.now().toString()
-        };
-
-        await setAnalysisHistory(prev => [newAnalysis, ...prev]);
-      } catch (parseErr) {
-        console.error('JSON parse error:', parseErr, 'Text:', jsonText);
-        throw new Error('Failed to parse analysis. Please try again.');
-      }
+      await saveAnalysisHistory([newAnalysis, ...analysisHistory]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
       console.error('Gemini API error:', err);
@@ -526,54 +505,74 @@ Be specific, constructive, and encouraging. Focus on DSA concepts and problem-so
             Past Analyses ({analysisHistory.length - 1})
           </h3>
           <div className="space-y-2">
-            {analysisHistory.slice(1).map((analysis) => (
-              <div key={analysis.id} className="border border-border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => setExpandedHistoryId(
-                    expandedHistoryId === analysis.id ? null : analysis.id
+            {/* Show limited history or all based on showAllHistory state */}
+            {analysisHistory
+              .slice(1, showAllHistory ? undefined : INITIAL_HISTORY_COUNT + 1)
+              .map((analysis) => (
+                <div key={analysis.id} className="border border-border rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setExpandedHistoryId(
+                      expandedHistoryId === analysis.id ? null : analysis.id
+                    )}
+                    className="w-full p-3 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <span className="text-sm font-medium">{analysis.date}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {expandedHistoryId === analysis.id ? '▲' : '▼'}
+                    </span>
+                  </button>
+                  {expandedHistoryId === analysis.id && (
+                    <div className="p-3 pt-0 space-y-3 border-t border-border bg-muted/30">
+                      <div>
+                        <h4 className="text-xs font-semibold text-primary mb-1">Insights</h4>
+                        <p className="text-xs leading-relaxed">{analysis.result.insights}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-success mb-1">✓ Strengths</h4>
+                        <ul className="text-xs space-y-1">
+                          {analysis.result.strengths.map((s, i) => (
+                            <li key={i}>• {s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-warning mb-1">⚠ Areas to Improve</h4>
+                        <ul className="text-xs space-y-1">
+                          {analysis.result.weakAreas.map((a, i) => (
+                            <li key={i}>• {a}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold mb-1">Suggestions</h4>
+                        <ul className="text-xs space-y-1">
+                          {analysis.result.suggestions.map((s, i) => (
+                            <li key={i}>{i + 1}. {s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
                   )}
-                  className="w-full p-3 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
-                >
-                  <span className="text-sm font-medium">{analysis.date}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {expandedHistoryId === analysis.id ? '▲' : '▼'}
-                  </span>
-                </button>
-                {expandedHistoryId === analysis.id && (
-                  <div className="p-3 pt-0 space-y-3 border-t border-border bg-muted/30">
-                    <div>
-                      <h4 className="text-xs font-semibold text-primary mb-1">Insights</h4>
-                      <p className="text-xs leading-relaxed">{analysis.result.insights}</p>
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold text-success mb-1">✓ Strengths</h4>
-                      <ul className="text-xs space-y-1">
-                        {analysis.result.strengths.map((s, i) => (
-                          <li key={i}>• {s}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold text-warning mb-1">⚠ Areas to Improve</h4>
-                      <ul className="text-xs space-y-1">
-                        {analysis.result.weakAreas.map((a, i) => (
-                          <li key={i}>• {a}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold mb-1">Suggestions</h4>
-                      <ul className="text-xs space-y-1">
-                        {analysis.result.suggestions.map((s, i) => (
-                          <li key={i}>{i + 1}. {s}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                </div>
+              ))}
           </div>
+
+          {/* Show More / Show Less button */}
+          {analysisHistory.length - 1 > INITIAL_HISTORY_COUNT && (
+            <button
+              onClick={() => setShowAllHistory(!showAllHistory)}
+              className="w-full mt-3 p-2 text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors flex items-center justify-center gap-1"
+            >
+              <ChevronDown className={cn(
+                "w-4 h-4 transition-transform",
+                showAllHistory && "rotate-180"
+              )} />
+              {showAllHistory
+                ? 'Show Less'
+                : `Show ${analysisHistory.length - 1 - INITIAL_HISTORY_COUNT} More`
+              }
+            </button>
+          )}
         </div>
       )}
 
