@@ -136,19 +136,52 @@ export function useLocalStorage<T>(
   return [storedValue, setValue, isLoading];
 }
 
+// Helper to normalize/migrate stored data to ensure all required fields exist
+// Also derives problemStates from entries if problemStates is missing/empty
+const normalizeProgress = (data: Partial<ExtendedUserProgress>): ExtendedUserProgress => {
+  const entries = data.entries || [];
+  let problemStates = data.problemStates || {};
+  
+  // If problemStates is empty but we have entries, derive problemStates from entries
+  if (Object.keys(problemStates).length === 0 && entries.length > 0) {
+    problemStates = {};
+    for (const entry of entries) {
+      problemStates[entry.problemId] = {
+        problemId: entry.problemId,
+        status: 'completed',
+        timerPhase: 'phase1',
+        elapsedTime: entry.timeSpent
+      };
+    }
+  }
+  
+  return {
+    startDate: data.startDate || new Date(),
+    currentDay: data.currentDay || 1,
+    problemStates,
+    weeklyReports: data.weeklyReports || [],
+    entries
+  };
+};
+
+interface ExtendedUserProgress extends UserProgress {
+  entries: BlackBookEntry[];
+}
+
 // Fixed useProgress hook with better async handling
 export const useProgress = () => {
-  interface ExtendedUserProgress extends UserProgress {
-    entries: BlackBookEntry[];
-  }
-
-  const [progress, setProgress, isLoading] = useLocalStorage<ExtendedUserProgress>('dsa-tracker-progress', {
+  const defaultProgress: ExtendedUserProgress = {
     startDate: new Date(),
     currentDay: 1,
     problemStates: {},
     weeklyReports: [],
     entries: []
-  });
+  };
+
+  const [rawProgress, setProgress, isLoading] = useLocalStorage<ExtendedUserProgress>('dsa-tracker-progress', defaultProgress);
+  
+  // Normalize the progress to ensure all fields exist (handles legacy/corrupted data)
+  const progress = normalizeProgress(rawProgress);
 
   const startDate = new Date(progress.startDate);
 

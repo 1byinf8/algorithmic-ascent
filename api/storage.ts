@@ -17,6 +17,11 @@ const ALLOWED_ORIGINS = [
 const isOriginAllowed = (origin: string | undefined): boolean => {
   if (!origin) return false;
   
+  // Allow any localhost or 127.0.0.1 origin (any port) for local development
+  if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    return true;
+  }
+  
   return ALLOWED_ORIGINS.some(allowed => {
     if (allowed.includes('*')) {
       // Handle wildcard patterns like 'https://algorithmic-ascent-*.vercel.app'
